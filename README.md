@@ -1,152 +1,170 @@
-# RATSA-Harness（命令行 `ratsa`）
+# RATSA-Harness (CLI: `ratsa`)
 
-把 RATSA.ai 接进**你已经在用的 Agent**：装一个 skill / MCP server，用一把**最小权限**的 key，
-跑通「检索 → 生成/拉包 → 本地跑 → 回传」的闭环。
+**English** · [中文](./README.zh-CN.md)
+
+Wire RATSA.ai into **the Agent you already use**: install a skill / MCP server, bring a
+**least-privilege** key, and close the loop — discover → generate/pull → run locally → report back.
 
 ```bash
-# 1. 装（六种 Agent 目标，见下）
-npx ratsa install --agent all           # 当前项目
-npx ratsa install --agent all --global  # 你的用户目录（每个工作区都能用）
-npx ratsa agents                        # 支持哪些 Agent / 各写哪些文件
+# 1) Install (six agent targets, see below)
+npx ratsa install --agent all           # current project
+npx ratsa install --agent all --global  # your home directory (works in every workspace)
+npx ratsa agents                        # which agents are supported / which files get written
 
-# 2. 凭证（推荐：自选权限 + 绑定归属）
+# 2) Credentials (recommended: choose scopes + bind an owning account)
 npx ratsa login --email you@example.com
 npx ratsa scopes
 npx ratsa keys create --name laptop-agent \
   --scopes sof:read,harness:read,package:pull --bound-slug your-handle --use
 
-# 3. 闭环
+# 3) The loop
 npx ratsa whoami
-npx ratsa search 舵机
-npx ratsa package <slug> --meta   # 平台官方生成设备 Harness 包（先看描述）
-npx ratsa package <slug>          # 下载（自动校验 sha256）
-npx ratsa sof-file <slug>         # 拉取 SOF 文件（可回灌）
+npx ratsa search servo
+npx ratsa package <slug> --meta   # platform-generated device Harness package (describe only)
+npx ratsa package <slug>          # download (sha256 verified)
+npx ratsa sof-file <slug>         # fetch the SOF file (can be posted back)
 npx ratsa report <slug> --score 88 --passed 22 --failed 2
 ```
 
-## 为什么是 CLI + 插件，而不是又一个 SDK
+## Why a CLI + plugin instead of yet another SDK
 
-Agent 时代真正缺的不是 API，而是**让 Agent 知道该怎么用**。所以本工程有两半：
+What the agent era actually lacks is not another API — it is **making the Agent know how to use
+it**. So this project ships two halves:
 
-1. **一个二进制**（Rust，无运行时依赖）：做网络调用、权限、校验、落盘。
-2. **一份可安装的说明**（skill / rules / AGENTS.md）：告诉 Agent 权限边界、包的种类、
-   失败怎么看 —— 包括「不要重试 `missing_scope`」「校验失败就停」这类**行为约束**。
+1. **One binary** (Rust, no runtime dependencies): does the network calls, permissions,
+   checksum verification, and writes files to disk.
+2. **One installable document** (skill / rules / `AGENTS.md`): tells the Agent the permission
+   boundary, the kinds of packages, and how to read failures — including behavioural rules such
+   as "do not retry `missing_scope`" and "stop on checksum mismatch".
 
-MCP 工具面同时暴露，Agent 可以完全不用记命令。
+The MCP tool surface is exposed at the same time, so an Agent never has to memorise commands.
 
-## 边界（读到这里的 Agent 也该知道）
+## Boundaries (an Agent reading this should know them too)
 
-- 平台**不执行**你的代码，**不中转**业务数据；设备扫描与 Eval 全部在本地跑。
-- CLI 只做三件事：拉制品、推结构化结果、管理自己的凭证。**没有 daemon，没有埋点。**
-- 拉取会校验服务端给出的 sha256（`X-Ratsa-Checksum`），不一致直接报错并拒绝落盘执行。
+- The platform **never executes** your code and **never relays** your business data; device
+  scanning and evaluation run locally.
+- The CLI does exactly three things: pull artifacts, push structured results, manage its own
+  credentials. **No daemon, no telemetry.**
+- Pulls verify the server-provided sha256 (`X-Ratsa-Checksum`); on mismatch it errors out and
+  refuses to persist or execute the artifact.
 
-## 安装目标
+## Install targets
 
-| `--agent` | 落盘 | 作用 |
+| `--agent` | Files written | Purpose |
 |---|---|---|
-| `claude` | `.claude/skills/ratsa/SKILL.md`（`--global`：`~/.claude/skills/ratsa/SKILL.md`） | Claude Code skill |
-| `mcp` | `.mcp.json`（合并 `mcpServers.ratsa`） | Claude Code / 兼容 MCP 客户端的 stdio server |
-| `cursor` | `.cursor/rules/ratsa.mdc` + `.cursor/mcp.json` | Cursor 规则 + MCP |
-| `copilot` | `.github/copilot-instructions.md` + `.github/skills/ratsa/SKILL.md` + `.vscode/mcp.json` | GitHub Copilot（`--global` 时另写 VS Code 用户 prompts 目录） |
-| `agents` | `AGENTS.md` | 通用约定（Codex / 其它读 AGENTS.md 的 Agent） |
-| `codex` | `<dir>/.codex/config.toml`（追加 `[mcp_servers.ratsa]`）+ `<dir>/.codex/RATSA.md`；默认 `<dir>` = `$HOME`（Codex 只读用户级配置） | OpenAI Codex CLI |
+| `claude` | `.claude/skills/ratsa/SKILL.md` (`--global`: `~/.claude/skills/ratsa/SKILL.md`) | Claude Code skill |
+| `mcp` | `.mcp.json` (merges `mcpServers.ratsa`) | stdio server for Claude Code / MCP-compatible clients |
+| `cursor` | `.cursor/rules/ratsa.mdc` + `.cursor/mcp.json` | Cursor rules + MCP |
+| `copilot` | `.github/copilot-instructions.md` + `.github/skills/ratsa/SKILL.md` + `.vscode/mcp.json` | GitHub Copilot (`--global` also writes the VS Code user prompts directory) |
+| `agents` | `AGENTS.md` | Generic convention (Codex / any Agent that reads `AGENTS.md`) |
+| `codex` | `<dir>/.codex/config.toml` (appends `[mcp_servers.ratsa]`) + `<dir>/.codex/RATSA.md`; `<dir>` defaults to `$HOME` (Codex only reads user-level config) | OpenAI Codex CLI |
 
-- 默认 **幂等**：已存在同名条目就跳过；`--force` 覆盖（改已有文件前先留 `.bak`）。
-- `--dry-run` 只打印将要写入的内容与合并结果，不落盘。
-- `--dir <path>` 指定根目录（可用于 CI / 容器镜像构建）。
+- **Idempotent** by default: an existing entry with the same name is skipped; `--force`
+  overwrites (an existing file is backed up to `.bak` first).
+- `--dry-run` prints what would be written and the merge result, without touching disk.
+- `--dir <path>` sets the root directory (useful for CI / container image builds).
 
-## 命令
+## Commands
 
-| 命令 | 说明 |
+| Command | Description |
 |---|---|
-| `install` | 安装 / 更新各 Agent 的 skill 与 MCP 条目 |
-| `agents` | 列出支持的 Agent、形态、写入文件、是否注册 MCP（`--json`） |
-| `login` / `logout` | 会话（仅用于创建与管理 key）；`RATSA_PASSWORD` 可免交互 |
-| `whoami` | 身份 + key 权限 + 归属绑定（`--json`） |
-| `scopes` | 权限表（从 `/api/meta` 取，含每项含义与默认集合） |
-| `keys list` / `keys create` / `keys revoke` | 权限自选 + 可选 `--bound-slug`；`--use` 立即应用 |
-| `config set/show/clear` | 本地凭证（`~/.ratsa/config.json`，0600） |
-| `search` / `sof` | 跨厂商检索与详情（`--json`） |
-| `manifest` / `packages` | 就绪度 + 问题清单 + 统一 `packages[]` |
-| `package` | **平台官方生成设备 Harness 包**并下载；`--meta` 只看描述（包内文件/就绪度/大小） |
-| `sof-file` | 拉取 SOF 文件（`kind=ratsa.sof.json`，可直接回灌 `POST /api/sof`） |
-| `pull` | 拉取任意 kind：`--kind device\|eval-repo\|service`，落盘 `~/.ratsa/packages/<slug>/<kind>/` |
-| `report` | 回传实测（`source=agent`），写入被测设备的 Harness Eval |
-| `feedback` | 提交反馈给厂商 |
-| `mcp` | 以 MCP stdio server 运行（12 个工具） |
+| `install` | Install / update each Agent's skill and MCP entry |
+| `agents` | List supported Agents, their form, files written, and MCP registration (`--json`) |
+| `login` / `logout` | Session (used only to create and manage keys); `RATSA_PASSWORD` for non-interactive use |
+| `whoami` | Identity + key scopes + owner binding (`--json`) |
+| `scopes` | Permission table (fetched from `/api/meta`, with per-scope meaning and default set) |
+| `keys list` / `keys create` / `keys revoke` | Choose scopes + optional `--bound-slug`; `--use` applies immediately |
+| `config set/show/clear` | Local credentials (`~/.ratsa/config.json`, mode 0600) |
+| `search` / `sof` | Cross-vendor search and detail (`--json`) |
+| `manifest` / `packages` | Readiness + issue list + unified `packages[]` |
+| `package` | **Generate the device Harness package server-side** and download it; `--meta` describes it only (files / readiness / size) |
+| `sof-file` | Fetch the SOF file (`kind=ratsa.sof.json`, can be posted straight back to `POST /api/sof`) |
+| `pull` | Pull any kind: `--kind device\|eval-repo\|service`, written to `~/.ratsa/packages/<slug>/<kind>/` |
+| `report` | Report a measured run (`source=agent`) into the device's Harness Eval |
+| `feedback` | Submit feedback to the vendor |
+| `mcp` | Run as an MCP stdio server (12 tools) |
 
-环境变量（适合 CI / 容器，无需配置文件）：
-`RATSA_BASE_URL`、`RATSA_KEY_ID`、`RATSA_KEY_SECRET`、`RATSA_CONFIG`、`RATSA_HOME`、`RATSA_PASSWORD`。
+Environment variables (handy for CI / containers, no config file needed):
+`RATSA_BASE_URL`, `RATSA_KEY_ID`, `RATSA_KEY_SECRET`, `RATSA_CONFIG`, `RATSA_HOME`, `RATSA_PASSWORD`.
 
-## 权限表（key / secret 的 scope）
+## Permission table (key / secret scopes)
 
-key 能做什么**只**由权限表决定；默认集合是「读 + 拉取」，也就是让 Agent 能干活的最小集合。
+What a key can do is decided **only** by its scopes; the default set is "read + pull", i.e. the
+minimum for an Agent to get work done.
 
-| scope | 组 | 含义 |
+| scope | Group | Meaning |
 |---|---|---|
-| `sof:read` | 读取 | 读公开 SOF、目录、`/api/meta` |
-| `sof:read:private` | 读取 | 额外可见 key 所有者（或绑定 slug）的私有 SOF |
-| `harness:read` | 读取 | Harness 清单、就绪度、包清单 |
-| `eval:read` | 读取 | Eval 列表、Eval Repo 元数据与 manifest |
-| `package:pull` | 拉取 | 下载设备 Harness 包 / Eval Repo / 服务测试包 |
-| `feedback:submit` | 回传 | 以 Agent / 设备身份提交反馈 |
-| `eval:report` | 回传 | 上报实测（`kind=harness`、`source=sdk\|agent`） |
-| `eval:publish` | 发布 | 创建 / 更新 Eval Repo |
-| `sof:write` | 发布 | 创建 / 更新 / 删除属于该身份的 SOF |
-| `order:manage` | 发布 | 作为服务商受理 / 开工 / 交付评测委托 |
-| `key:manage` | 管理 | 列出 / 轮换 / 删除该账号的 key |
-| `admin` | 管理 | 仅管理员可授予；包含所有权限 |
+| `sof:read` | Read | Read public SOFs, the catalog, `/api/meta` |
+| `sof:read:private` | Read | Additionally see private SOFs of the key owner (or its bound slug) |
+| `harness:read` | Read | Harness manifests, readiness, package listings |
+| `eval:read` | Read | Eval listings, Eval Repo metadata and manifests |
+| `package:pull` | Pull | Download device Harness packages / Eval Repos / service test packs |
+| `feedback:submit` | Report | Submit feedback as an Agent / device |
+| `eval:report` | Report | Report measured runs (`kind=harness`, `source=sdk\|agent`) |
+| `eval:publish` | Publish | Create / update Eval Repos |
+| `sof:write` | Publish | Create / update / delete SOFs owned by that identity |
+| `order:manage` | Publish | Take on / start / deliver evaluation engagements as a service provider |
+| `key:manage` | Admin | List / rotate / delete keys of that account |
+| `admin` | Admin | Grantable by admins only; implies every scope |
 
-- **默认**（不指定时）：`sof:read,harness:read,eval:read,package:pull`。
-- 可见性仍然叠加在上层：权限表决定「这一类操作能不能做」，发布者设定的**可见性档位**
-  决定「这一条数据能不能看」（登录可见 → 401 `login_required`；私有 → 403/404）。
-- 缺权限返回 **403 `missing_scope`**，响应体带 `scope` 与 `scopes`，便于 Agent 直接
-  告诉用户该补哪一项。
+- **Default** (when unspecified): `sof:read,harness:read,eval:read,package:pull`.
+- Visibility still stacks on top: the scope decides *whether this class of operation is
+  allowed*, while the publisher's **visibility tier** decides *whether this particular record
+  is visible* (login-only → 401 `login_required`; private → 403/404).
+- A missing scope returns **403 `missing_scope`** with `scope` and `scopes` in the body, so the
+  Agent can tell the user exactly which one to add.
 
-## 归属绑定（`bound_slug`）
+## Owner binding (`bound_slug`)
 
-给 key 指定一个账号 handle，该 key 之后**以该账号身份行动**：它读取的私有资产、
-它的发布与提交，都归属到那个账号。
+Point a key at an account handle and the key then **acts as that account**: the private assets
+it reads, its publishes and submissions all belong to that account.
 
-- 用途：把「谁在用这把钥匙」和「这把钥匙代表谁」分开 —— 例如外包商 / 集成商替客户
-  做事、或一台设备用绑定 key 上报实测。
-- 限制：**普通用户只能绑定自己的 handle**（防止提权）。绑定他人 handle 目前需要管理员；
-  若需要「厂商授权第三方持有自己身份的 key」，需要一条**授权邀请**流程（见下）。
-- 平台侧解析：`/api/v1/me` 返回 `acting_as`；key 列表返回 `bound_user`。
+- Use case: separate "who holds this key" from "whom this key speaks for" — e.g. an outsourcer
+  or integrator working on a client's behalf, or a device reporting measurements with a bound key.
+- Limits: **a regular user can only bind their own handle** (privilege-escalation guard). Binding
+  someone else's handle currently requires an admin; a proper **authorisation invite** flow is
+  needed for "vendor authorises a third party to hold a key under its identity" (see below).
+- Server side: `/api/v1/me` returns `acting_as`; the key list returns `bound_user`.
 
-## MCP 工具（12 个）
+## MCP tools (12)
 
 `ratsa_whoami` · `ratsa_scopes` · `ratsa_search_sofs` · `ratsa_read_sof` ·
 `ratsa_device_harness` · `ratsa_list_packages` · `ratsa_pull_package` ·
 `ratsa_list_agents` · `ratsa_generate_package` · `ratsa_get_sof_file` ·
 `ratsa_report_run` · `ratsa_submit_feedback`
 
-协议为 MCP stdio（换行分隔的 JSON-RPC 2.0），无额外依赖，便于审计。
+The protocol is MCP over stdio (newline-delimited JSON-RPC 2.0) with no extra dependencies,
+which keeps it easy to audit.
 
-## 构建与分发
+## Build and distribution
 
 ```bash
 cd ratsa-harness
-cargo build --release            # 产出 target/release/ratsa
-cargo build --offline            # 依赖已缓存时可离线构建
-./scripts/build-release.sh --all --vendor-npm   # 各平台产物 + npm/vendor/ 内置当前平台二进制
+cargo build --release            # produces target/release/ratsa
+cargo build --offline            # offline build once dependencies are cached
+./scripts/build-release.sh --all --vendor-npm   # per-platform artifacts + npm/vendor/ with the current platform binary
 ```
 
-`npx ratsa` 依靠 `npm/` 下的**启动器包**（不打包二进制，运行时解析或下载，见 `npm/README.md`）：
+`npx ratsa` relies on the **launcher package** in `npm/` (it does not embed binaries — it
+resolves or downloads one at runtime, see `npm/README.md`):
 
 ```bash
-node npm/bin/ratsa.js --version   # 本地验证
+node npm/bin/ratsa.js --version   # local check
 cd npm && npm publish --access public
 ```
 
-发布通道由 `RATSA_RELEASE_BASE` 指定（默认 `https://ratsa.ai/downloads`，也可指向 GitHub
-Releases 前缀）；资产命名 `ratsa-<version>-<os>-<arch>[.exe]` + `checksums.txt`。
+The release channel is set by `RATSA_RELEASE_BASE` (defaults to `https://ratsa.ai/downloads`;
+a GitHub Releases prefix works too). Asset naming is
+`ratsa-<version>-<os>-<arch>[.exe]` plus `checksums.txt`.
 
-## 已知限制 / 待办
+## Known limitations / TODO
 
-- 「绑定他人 handle」需要授权邀请机制（当前仅管理员可为，见 `prd/ratsa-harness-issues.md` A-10）。
-- Windows 未单独验证（代码只用 std + ureq，理论上可用）。
-- `--global` 的 VS Code Copilot 目标写入用户 prompts 目录，仅覆盖 instructions（不写用户级 MCP）。
-- 新 Agent 目标（Windsurf / Zed / Cline / Continue / Aider / Gemini CLI 等）未单列：加一个
-  目标 = `src/install.rs` 的 `target_table()` 加一条 + `payloads()` 给一行落盘路径，并同步
-  `web/src/components/HarnessCliIntro.jsx` 的 AGENTS 表与 `prd/ratsa-harness-cli.md` §2。
+- Binding **someone else's** handle needs an authorisation invite mechanism (currently
+  admin-only, see `prd/ratsa-harness-issues.md` A-10).
+- Windows has not been verified separately (the code only uses std + ureq, so it should work).
+- The `--global` VS Code Copilot target writes into the user prompts directory and covers
+  instructions only (it does not write a user-level MCP config).
+- New Agent targets (Windsurf / Zed / Cline / Continue / Aider / Gemini CLI, …) are not listed
+  individually: adding one = one entry in `target_table()` in `src/install.rs` + one line in
+  `payloads()` for the path, then sync the AGENTS table in
+  `web/src/components/HarnessCliIntro.jsx` and `prd/ratsa-harness-cli.md` §2.

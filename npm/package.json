@@ -1,7 +1,7 @@
 {
   "name": "ratsa",
   "version": "0.1.0",
-  "description": "RATSA-Harness CLI —— 把 RATSA.ai 接入你的 Agent：安装 skill/MCP 插件、用最小权限 key 检索 SOF、生成并拉取 Harness Package 与 SOF 文件、回传本地评测结果",
+  "description": "RATSA-Harness CLI — wire RATSA.ai into your Agent: install skill/MCP integrations, use a least-privilege key to search SOFs, generate and pull Harness Packages and SOF files, and report local evaluation results back",
   "keywords": [
     "ratsa",
     "sof",
@@ -25,7 +25,8 @@
   "files": [
     "bin/",
     "install.js",
-    "README.md"
+    "README.md",
+    "README.zh-CN.md"
   ],
   "scripts": {
     "postinstall": "node install.js"

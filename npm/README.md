@@ -1,59 +1,63 @@
-# `ratsa`（npm 包装）
+# `ratsa` (npm wrapper)
 
-让 `npx ratsa …` 可用。这个包**不打包二进制**，只是一个启动器：找到（必要时下载）真正的
-`ratsa` 可执行文件，然后把它 exec 出去。
+**English** · [中文](./README.zh-CN.md)
+
+Makes `npx ratsa …` work. This package **does not bundle a binary** — it is a launcher: it finds
+the real `ratsa` executable (downloading it if necessary) and execs it.
 
 ```
 npm/
   package.json      name=ratsa, bin={ratsa: bin/ratsa.js}, postinstall=install.js
-  bin/ratsa.js      解析顺序：RATSA_BIN → vendor/ → ~/.ratsa/bin → 本地 target/{release,debug}
-  lib/platform.js   平台标签、资产命名、解析逻辑（与 scripts/build-release.sh 同一约定）
-  install.js        尽力下载（postinstall 永不失败），并留一份到 vendor/
+  bin/ratsa.js      resolution order: RATSA_BIN → vendor/ → ~/.ratsa/bin → local target/{release,debug}
+  lib/platform.js   platform label, asset naming, resolution logic (same convention as scripts/build-release.sh)
+  install.js        best-effort download (postinstall never fails), keeps a copy in vendor/
+  README.md         English docs (this file — shown on the npm page)
+  README.zh-CN.md   Chinese docs (top of both files links to the other language)
 ```
 
-## 为什么是「启动器」而不是各平台子包
+## Why a launcher instead of per-platform sub-packages
 
-- tarball 只有几 KB，`npm i` 不会因为下载 2.5 MB 二进制而变慢或失败；
-- 一个 `npm publish` 覆盖 macOS / Linux / Windows（x64 + arm64）；
-- 二进制放在 `~/.ratsa/bin/`，**不受 `npx` 缓存清理影响**；
-- 离线/被墙环境里 postinstall 会安静跳过，`npx ratsa` 首次运行再试一次，仍失败则打印
-  `cargo install --path ratsa-harness` 的替代方案。
+- The tarball is only a few KB, so `npm i` never slows down or fails over a 2.5 MB binary download.
+- One `npm publish` covers macOS / Linux / Windows (x64 + arm64).
+- The binary lives in `~/.ratsa/bin/`, **immune to `npx` cache cleaning**.
+- Offline or firewalled environments: `postinstall` silently skips, `npx ratsa` retries on first
+  run, and if that fails too it prints the `cargo install --path ratsa-harness` alternative.
 
-## 发布流程（一次性）
+## Release process (one-time)
 
 ```bash
-# 1. 产出各平台产物 + 把当前平台二进制塞进 npm/vendor/
+# 1) Build per-platform artifacts + copy the current platform's binary into npm/vendor/
 cd ratsa-harness && ./scripts/build-release.sh --all --vendor-npm
 
-# 2. 把 dist/ 传到发布通道（二选一，asset 命名必须一致）
-#    a) ratsa.ai 的 /downloads 目录（默认 RATSA_RELEASE_BASE）
-#    b) GitHub Releases：
+# 2) Upload dist/ to the release channel (either way; asset naming must match)
+#    a) the /downloads directory on ratsa.ai (default RATSA_RELEASE_BASE)
+#    b) GitHub Releases:
 #       RATSA_RELEASE_BASE=https://github.com/<org>/<repo>/releases/download/v0.1.0
-#    产物：ratsa-<version>-<os>-<arch>[.exe] + checksums.txt
+#    Assets: ratsa-<version>-<os>-<arch>[.exe] + checksums.txt
 
-# 3. 本地验证（不需要发布）
+# 3) Local check (publishing not required)
 node npm/bin/ratsa.js --version
 node npm/bin/ratsa.js agents
 
-# 4. 发布
+# 4) Publish
 cd npm && npm publish --access public
 ```
 
-`ratsa` / `@ratsa/cli` / `ratsa-harness` 在 npm 上目前都未被占用（2026-09-10 查询 registry
-返回 404）。若日后 `ratsa` 被占，改用作用域包 `@ratsa/cli` 并把 `bin` 名称保持为 `ratsa`
-（`npx @ratsa/cli …`）。
+`ratsa` / `@ratsa/cli` / `ratsa-harness` are all currently unclaimed on npm (checked 2026-09-10;
+the registry returned 404). If `ratsa` gets taken later, switch to the scoped `@ratsa/cli` and keep
+the `bin` name as `ratsa` (`npx @ratsa/cli …`).
 
-## 环境变量
+## Environment variables
 
-| 变量 | 用途 |
+| Variable | Purpose |
 | --- | --- |
-| `RATSA_BIN` | 指定可执行文件，跳过解析（CI / 自编译） |
-| `RATSA_RELEASE_BASE` | 发布通道前缀，默认 `https://ratsa.ai/downloads` |
-| `RATSA_QUIET=1` | 静默 postinstall |
-| `RATSA_HOME` | 用户目录（默认 `~/.ratsa`），二进制落在 `$RATSA_HOME/bin` |
+| `RATSA_BIN` | Point at a specific executable, skipping resolution (CI / self-built) |
+| `RATSA_RELEASE_BASE` | Release channel prefix, defaults to `https://ratsa.ai/downloads` |
+| `RATSA_QUIET=1` | Silence `postinstall` |
+| `RATSA_HOME` | User directory (defaults to `~/.ratsa`); the binary lands in `$RATSA_HOME/bin` |
 
-## 与它无关但常被混淆
+## Unrelated but often confused
 
-`npx ratsa mcp` 会**继承 stdin/stdout**（MCP 是 stdio 协议），启动器用
-`spawnSync(bin, args, { stdio: 'inherit' })` 并透传退出码与信号 —— 改这个文件时别把 stdio
-改成 pipe，否则 Agent 侧握手会挂住。
+`npx ratsa mcp` **inherits stdin/stdout** (MCP is a stdio protocol); the launcher uses
+`spawnSync(bin, args, { stdio: 'inherit' })` and forwards the exit code and signals — do not turn
+stdio into a pipe when editing this file, or the Agent-side handshake will hang.
