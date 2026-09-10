@@ -1,0 +1,25 @@
+[package]
+name = "ratsa-harness"
+version = "0.1.0"
+edition = "2021"
+description = "RATSA-Harness：本地 Agent 侧的 RATSA.ai 接入命令行（插件 / Skill 安装 + 最小权限 key + Harness Package 拉取与结果回传）"
+license = "MIT"
+repository = "https://ratsa.ai"
+
+[[bin]]
+# The CLI is named `ratsa` (the project/repo is `RATSA-Harness`).
+name = "ratsa"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ureq = { version = "2", features = ["json", "tls"] }
+# Already in the tree via rustls; used directly to verify the Harness Package
+# checksum the server reports in `X-Ratsa-Checksum`.
+ring = "0.17"
+
+[profile.release]
+strip = true
+lto = true

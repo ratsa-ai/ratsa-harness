@@ -1,0 +1,46 @@
+{
+  "name": "ratsa",
+  "version": "0.1.0",
+  "description": "RATSA-Harness CLI —— 把 RATSA.ai 接入你的 Agent：安装 skill/MCP 插件、用最小权限 key 检索 SOF、生成并拉取 Harness Package 与 SOF 文件、回传本地评测结果",
+  "keywords": [
+    "ratsa",
+    "sof",
+    "harness",
+    "agent",
+    "mcp",
+    "hardware",
+    "cli"
+  ],
+  "homepage": "https://ratsa.ai/harness",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ratsa-ai/ratsa-harness.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ratsa-ai/ratsa-harness/issues"
+  },
+  "bin": {
+    "ratsa": "bin/ratsa.js"
+  },
+  "files": [
+    "bin/",
+    "install.js",
+    "README.md"
+  ],
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
+  "license": "MIT"
+}

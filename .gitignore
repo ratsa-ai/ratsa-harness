@@ -1,0 +1,7 @@
+/target
+/dist
+/npm/vendor
+/npm/node_modules
+npm-debug.log*
+*.bak
+.DS_Store

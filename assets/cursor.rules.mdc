@@ -1,0 +1,53 @@
+---
+description: RATSA.ai 平台接入 —— 检索 SOF、拉取 Harness Package、本地跑评测并回传结果
+globs: ["**/*"]
+alwaysApply: true
+---
+
+# RATSA（通过 RATSA-Harness）
+
+`{{BIN}}` 已就绪。base_url = `{{BASE_URL}}`，key = `{{KEY_NAME}}`，权限 = `{{SCOPES}}`，归属绑定 = `{{BOUND}}`。
+
+## 什么时候用
+
+- 用户提到 RATSA / SOF / Harness 包 / 设备 harness / eval repo / 服务测试包 / 硬件接入评测
+- 需要找某个设备、零部件、传感器，或需要一台设备的可执行 harness
+- 需要把本地跑出来的评测结果记进平台
+
+## 规则
+
+1. **不要编造 slug** —— 一律来自 `{{BIN}} search` / `{{BIN}} packages` 的真实返回。
+2. **平台不执行代码、不碰业务数据**，扫描与评测都在本地跑。
+3. **权限不足不要重试**：403 `missing_scope` 就直接告诉用户缺哪个 scope（可用 `{{BIN}} scopes` 查表）。
+4. **401 `login_required` / 私有制品** 是可见性设置，不是网络故障。
+5. **sha256 校验失败必须停下**，不要执行那个包。
+
+## 命令速查
+
+```bash
+{{BIN}} whoami                                   # 身份 + 权限 + 归属绑定
+{{BIN}} scopes                                   # 权限表
+{{BIN}} search <关键字> [--category <类目>] [--json]
+{{BIN}} sof <slug> [--json]
+{{BIN}} manifest <slug>                          # 就绪度 + 问题 + 包清单
+{{BIN}} packages <slug> [--json]
+{{BIN}} pull <slug> --kind device|eval-repo|service [--out <目录>]
+{{BIN}} report <slug> --score 88 --passed 22 --failed 2 [--summary "…"] [--notes "…"]
+{{BIN}} feedback <slug> --title "…" --detail "…" [--category bug] [--severity high]
+```
+
+## 三种 Harness Package
+
+| package_kind | 拉取方式 |
+|---|---|
+| `device-harness` | `{{BIN}} pull <slug> --kind device`（含 `sof.json` / `ratsa.harness.json` / `harness/harness.py` / `manifest.json`） |
+| `eval-repo` | `{{BIN}} pull <eval-slug> --kind eval-repo` |
+| `service-harness` | `{{BIN}} pull <service-slug> --kind service` |
+
+## 需要更多权限
+
+不要自行扩权，让用户执行：
+
+```bash
+{{BIN}} keys create --name <用途> --scopes <scope 列表> --bound-slug <handle> --use
+```
