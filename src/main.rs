@@ -169,6 +169,24 @@ enum Command {
         #[arg(long, default_value = "")]
         severity: String,
     },
+    /// 读取 SOF 知识库（厂商用 Markdown 维护；客户凭 k/s 拉取，需 kb:read）
+    Kb {
+        /// 设备 slug（省略 = 账号级：common + scope）
+        #[arg(long)]
+        sof: Option<String>,
+        /// 只看某一类：common（公共/领域基础）| scope（用户 Scope/账号介绍）| sof（设备）
+        #[arg(long)]
+        r#type: Option<String>,
+        /// 只取某一篇：文档键 key 或文档 slug
+        #[arg(long)]
+        doc: Option<String>,
+        /// 落盘目录（默认把 Markdown 打印到终端）
+        #[arg(long)]
+        out: Option<String>,
+        /// 输出原始 JSON（索引）
+        #[arg(long)]
+        json: bool,
+    },
     /// 以 MCP stdio 服务器方式运行（供 Agent 作为工具调用）
     Mcp,
 }
@@ -380,6 +398,22 @@ fn main() {
             let slug = api::slug_or_url(&slug);
             commands::submit_feedback(&client, &slug, &title, &detail, &category, &severity)
                 .map(|s| print!("{s}"))
+        }
+        Command::Kb {
+            sof,
+            r#type,
+            doc,
+            out,
+            json,
+        } => {
+            let client = api::Client::new(&cfg);
+            let sof = sof.unwrap_or_default();
+            let tfilter = r#type.unwrap_or_default();
+            let out = out.unwrap_or_default();
+            match doc {
+                Some(d) => commands::kb_read(&client, &sof, &tfilter, &d, &out).map(|s| print!("{s}")),
+                None => commands::kb_index(&client, &sof, &tfilter, json).map(|s| print!("{s}")),
+            }
         }
         Command::Mcp => mcp::serve(),
     };

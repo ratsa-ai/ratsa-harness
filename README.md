@@ -80,9 +80,10 @@ The MCP tool surface is exposed at the same time, so an Agent never has to memor
 | `package` | **Generate the device Harness package server-side** and download it; `--meta` describes it only (files / readiness / size) |
 | `sof-file` | Fetch the SOF file (`kind=ratsa.sof.json`, can be posted straight back to `POST /api/sof`) |
 | `pull` | Pull any kind: `--kind device\|eval-repo\|service`, written to `~/.ratsa/packages/<slug>/<kind>/` |
+| `kb` | Pull the SOF knowledge base: index by default, `--sof <slug>` for a device level, `--doc <key\|slug>` prints or saves the Markdown (checksum verified) |
 | `report` | Report a measured run (`source=agent`) into the device's Harness Eval |
 | `feedback` | Submit feedback to the vendor |
-| `mcp` | Run as an MCP stdio server (12 tools) |
+| `mcp` | Run as an MCP stdio server (14 tools) |
 
 Environment variables (handy for CI / containers, no config file needed):
 `RATSA_BASE_URL`, `RATSA_KEY_ID`, `RATSA_KEY_SECRET`, `RATSA_CONFIG`, `RATSA_HOME`, `RATSA_PASSWORD`.
@@ -126,12 +127,13 @@ it reads, its publishes and submissions all belong to that account.
   needed for "vendor authorises a third party to hold a key under its identity" (see below).
 - Server side: `/api/v1/me` returns `acting_as`; the key list returns `bound_user`.
 
-## MCP tools (12)
+## MCP tools (14)
 
 `ratsa_whoami` · `ratsa_scopes` · `ratsa_search_sofs` · `ratsa_read_sof` ·
 `ratsa_device_harness` · `ratsa_list_packages` · `ratsa_pull_package` ·
 `ratsa_list_agents` · `ratsa_generate_package` · `ratsa_get_sof_file` ·
-`ratsa_report_run` · `ratsa_submit_feedback`
+`ratsa_report_run` · `ratsa_submit_feedback` ·
+`ratsa_list_kb` · `ratsa_read_kb`
 
 The protocol is MCP over stdio (newline-delimited JSON-RPC 2.0) with no extra dependencies,
 which keeps it easy to audit.

@@ -73,9 +73,10 @@ MCP 工具面同时暴露，Agent 可以完全不用记命令。
 | `package` | **平台官方生成设备 Harness 包**并下载；`--meta` 只看描述（包内文件/就绪度/大小） |
 | `sof-file` | 拉取 SOF 文件（`kind=ratsa.sof.json`，可直接回灌 `POST /api/sof`） |
 | `pull` | 拉取任意 kind：`--kind device\|eval-repo\|service`，落盘 `~/.ratsa/packages/<slug>/<kind>/` |
+| `kb` | 拉取 SOF 知识库：无参看索引，`--sof <slug>` 看设备分层，`--doc <key\|slug>` 打印/落盘 Markdown 原文（校验 checksum） |
 | `report` | 回传实测（`source=agent`），写入被测设备的 Harness Eval |
 | `feedback` | 提交反馈给厂商 |
-| `mcp` | 以 MCP stdio server 运行（12 个工具） |
+| `mcp` | 以 MCP stdio server 运行（14 个工具） |
 
 环境变量（适合 CI / 容器，无需配置文件）：
 `RATSA_BASE_URL`、`RATSA_KEY_ID`、`RATSA_KEY_SECRET`、`RATSA_CONFIG`、`RATSA_HOME`、`RATSA_PASSWORD`。
@@ -116,12 +117,13 @@ key 能做什么**只**由权限表决定；默认集合是「读 + 拉取」，
   若需要「厂商授权第三方持有自己身份的 key」，需要一条**授权邀请**流程（见下）。
 - 平台侧解析：`/api/v1/me` 返回 `acting_as`；key 列表返回 `bound_user`。
 
-## MCP 工具（12 个）
+## MCP 工具（14 个）
 
 `ratsa_whoami` · `ratsa_scopes` · `ratsa_search_sofs` · `ratsa_read_sof` ·
 `ratsa_device_harness` · `ratsa_list_packages` · `ratsa_pull_package` ·
 `ratsa_list_agents` · `ratsa_generate_package` · `ratsa_get_sof_file` ·
-`ratsa_report_run` · `ratsa_submit_feedback`
+`ratsa_report_run` · `ratsa_submit_feedback` ·
+`ratsa_list_kb` · `ratsa_read_kb`
 
 协议为 MCP stdio（换行分隔的 JSON-RPC 2.0），无额外依赖，便于审计。
 

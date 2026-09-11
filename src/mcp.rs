@@ -222,6 +222,33 @@ fn tools() -> Vec<Value> {
                 "required": ["slug", "title"], "additionalProperties": false
             }
         }),
+        json!({
+            "name": "ratsa_list_kb",
+            "description": "列出厂商 SOF 知识库（Markdown 文档索引：文档键 / 级别 / 标题 / 分组 / checksum）。知识库不对外开放，需要 kb:read 且 key 属于该厂商账号或绑定到该账号。",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "sof": str_prop("可选：设备 slug（省略 = 账号级：common + scope）"),
+                    "type": {"type": "string", "enum": ["common", "scope", "sof"],
+                             "description": "可选：只看某一类（common 公共/领域基础、scope 用户 Scope/账号介绍、sof 设备）"}
+                },
+                "required": [], "additionalProperties": false
+            }
+        }),
+        json!({
+            "name": "ratsa_read_kb",
+            "description": "读取 SOF 知识库里的一篇 Markdown 原文（doc 可传文档键 key 或 slug）。需要 kb:read，且 key 属于该厂商账号或绑定到该账号。",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "doc": str_prop("文档键 key（如 quickstart）或文档 slug"),
+                    "sof": str_prop("可选：设备 slug（省略 = 账号级：common + scope）"),
+                    "type": {"type": "string", "enum": ["common", "scope", "sof"],
+                             "description": "可选：只在某一类里查找（同 ratsa_list_kb）"}
+                },
+                "required": ["doc"], "additionalProperties": false
+            }
+        }),
     ]
 }
 
@@ -289,6 +316,24 @@ fn run_tool(name: &str, args: &Value, client: &Client) -> Result<String, String>
                 return Err(resp.error_message());
             }
             Ok(serde_json::to_string_pretty(&resp.json()).unwrap_or_default())
+        }
+        "ratsa_list_kb" => {
+            if !client_has_creds(client) {
+                return Ok(commands::cli_not_configured_hint());
+            }
+            commands::kb_index(client, &arg_str(args, "sof"), &arg_str(args, "type"), false)
+        }
+        "ratsa_read_kb" => {
+            if !client_has_creds(client) {
+                return Ok(commands::cli_not_configured_hint());
+            }
+            commands::kb_read(
+                client,
+                &arg_str(args, "sof"),
+                &arg_str(args, "type"),
+                &arg_str(args, "doc"),
+                "",
+            )
         }
         "ratsa_list_packages" => {
             let slug = api::slug_or_url(&arg_str(args, "slug"));

@@ -646,6 +646,176 @@ pub fn sof_file_cmd(client: &Client, slug: &str, out_dir: &str) -> Result<String
     Ok(out)
 }
 
+// ------------------------------------------------------------ knowledge base
+
+/// kb_path builds `/api/v1/kb` with the optional `sof` / `type` filters.
+///
+/// `sof` 有值 = 设备视图（该设备的 `sof` 文档 + 账号级 `common` / `scope`，同 key
+/// 设备级覆盖）；无值 = 账号级视图。`type` ∈ common | scope | sof。
+pub fn kb_path(sof: &str, type_filter: &str) -> String {
+    let mut q: Vec<String> = Vec::new();
+    if !sof.is_empty() {
+        q.push(format!("sof={sof}"));
+    }
+    if !type_filter.is_empty() {
+        q.push(format!("type={type_filter}"));
+    }
+    if q.is_empty() {
+        "/api/v1/kb".to_string()
+    } else {
+        format!("/api/v1/kb?{}", q.join("&"))
+    }
+}
+
+/// `ratsa kb` —— SOF 知识库索引（按类型：common 公共 / scope 用户 Scope / sof 设备）。
+///
+/// 知识库**不对外开放**：服务端只放行「该厂商账号名下的 key」或「bound_slug
+/// 绑定到该账号的 key」，且 key 需带 `kb:read`；只有 `published` 文档会返回。
+pub fn kb_index(client: &Client, sof: &str, type_filter: &str, json_out: bool) -> Result<String, String> {
+    let path = kb_path(sof, type_filter);
+    let resp = client.get(&path)?;
+    if resp.status >= 400 {
+        return Err(resp.error_message());
+    }
+    let v = resp.json();
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+    }
+
+    let owner = v
+        .get("owner")
+        .and_then(|o| o.get("slug"))
+        .and_then(|s| s.as_str())
+        .unwrap_or("");
+    let sof_name = v
+        .get("sof")
+        .and_then(|s| s.get("name"))
+        .and_then(|s| s.as_str())
+        .unwrap_or("");
+    let docs = v.get("docs").and_then(|d| d.as_array()).cloned().unwrap_or_default();
+
+    let mut out = String::new();
+    out.push_str(&format!(
+        "SOF 知识库 · 归属 @{owner}{}{} · 共 {} 篇（仅含已发布）\n",
+        if sof_name.is_empty() { "" } else { " · 设备 " },
+        sof_name,
+        docs.len()
+    ));
+    out.push_str(&format!(
+        "spec {} · 范围：{}\n",
+        v.get("spec").and_then(|s| s.as_str()).unwrap_or("-"),
+        if sof.is_empty() {
+            "账号级（common 公共 + scope 用户 Scope）"
+        } else {
+            "设备视图（该设备的 sof 文档 + 账号级；同 key 时设备级覆盖）"
+        }
+    ));
+    out.push_str(&format!(
+        "拉取原文：ratsa kb{} --doc <key>\n",
+        if sof.is_empty() { String::new() } else { format!(" --sof {sof}") }
+    ));
+    if docs.is_empty() {
+        out.push_str("\n（这个知识库还没有已发布的文档）\n");
+        return Ok(out);
+    }
+    out.push_str("\n");
+    let mut last_cat: Option<String> = None;
+    for d in &docs {
+        let cat = d.get("category").and_then(|c| c.as_str()).unwrap_or("");
+        if last_cat.as_deref() != Some(cat) {
+            out.push_str(&format!("[{}]\n", if cat.is_empty() { "未分组" } else { cat }));
+            last_cat = Some(cat.to_string());
+        }
+        let key = d.get("key").and_then(|k| k.as_str()).unwrap_or("");
+        let title = d.get("title").and_then(|k| k.as_str()).unwrap_or("");
+        let tp = d.get("type").and_then(|k| k.as_str()).unwrap_or("");
+        let bytes = d.get("bytes").and_then(|b| b.as_u64()).unwrap_or(0);
+        let sum = d
+            .get("checksum")
+            .and_then(|c| c.as_str())
+            .unwrap_or("")
+            .trim_start_matches("sha256:");
+        out.push_str(&format!(
+            "  {:<22} {:<7} {:>6} 字节  {}  {}\n",
+            truncate_cells(key, 22),
+            tp,
+            bytes,
+            truncate_cells(title, 40),
+            truncate_cells(sum, 12)
+        ));
+    }
+    out.push_str("\n提示：原文为 Markdown；checksum 是 sha256(正文)，可在本地校验。\n");
+    Ok(out)
+}
+
+/// `ratsa kb --doc <key|slug>` —— 拉取一篇 Markdown 原文（默认打印到终端）。
+///
+/// `doc` 既可以是文档键（如 `quickstart`），也可以是文档 slug；键会先在索引里
+/// 解析成 slug，所以客户不需要记住随机编码。
+pub fn kb_read(client: &Client, sof: &str, type_filter: &str, doc: &str, out_dir: &str) -> Result<String, String> {
+    let index_path = kb_path(sof, type_filter);
+    let idx = client.get(&index_path)?;
+    if idx.status >= 400 {
+        return Err(idx.error_message());
+    }
+    let idx = idx.json();
+    let docs = idx.get("docs").and_then(|d| d.as_array()).cloned().unwrap_or_default();
+    let found = docs.iter().find(|d| {
+        d.get("key").and_then(|k| k.as_str()) == Some(doc)
+            || d.get("slug").and_then(|k| k.as_str()) == Some(doc)
+    });
+    let found = match found {
+        Some(f) => f.clone(),
+        None => {
+            let keys: Vec<String> = docs
+                .iter()
+                .filter_map(|d| d.get("key").and_then(|k| k.as_str()).map(|s| s.to_string()))
+                .collect();
+            return Err(format!(
+                "知识库里没有文档「{doc}」{}。可用：{}",
+                if sof.is_empty() { String::new() } else { format!("（设备 {sof}）") },
+                if keys.is_empty() { "（暂无已发布文档）".to_string() } else { keys.join(", ") }
+            ));
+        }
+    };
+    let slug = found.get("slug").and_then(|s| s.as_str()).unwrap_or("").to_string();
+    let key = found.get("key").and_then(|s| s.as_str()).unwrap_or("doc").to_string();
+    let title = found.get("title").and_then(|s| s.as_str()).unwrap_or("").to_string();
+    let tp = found.get("type").and_then(|s| s.as_str()).unwrap_or("").to_string();
+    let want = found.get("checksum").and_then(|c| c.as_str()).unwrap_or("").to_string();
+
+    let (body, headers) = client.download(&format!("/api/v1/kb/{slug}"))?;
+    let got = headers.checksum.clone();
+    if !want.is_empty() && !got.is_empty() && want != got {
+        return Err(format!("checksum 不一致：期望 {want}，服务端返回 {got}"));
+    }
+
+    if out_dir.is_empty() {
+        let mut out = String::new();
+        out.push_str(&format!("# {title}\n"));
+        out.push_str(&format!(
+            "<!-- key={key} type={tp} checksum={} -->\n\n",
+            if got.is_empty() { want.as_str() } else { got.as_str() }
+        ));
+        out.push_str(&String::from_utf8_lossy(&body));
+        if !out.ends_with('\n') {
+            out.push('\n');
+        }
+        return Ok(out);
+    }
+
+    let dir = PathBuf::from(out_dir);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("无法创建 {}: {e}", dir.display()))?;
+    let file = dir.join(format!("{key}.md"));
+    std::fs::write(&file, &body).map_err(|e| format!("写入 {} 失败: {e}", file.display()))?;
+    Ok(format!(
+        "已保存知识库文档\n  标题 : {title}\n  类型 : {tp}\n  落盘 : {}\n  大小 : {} 字节\n  校验 : {}\n",
+        file.display(),
+        body.len(),
+        if got.is_empty() { want } else { got }
+    ))
+}
+
 // ------------------------------------------------------------ report / feedback
 
 #[allow(clippy::too_many_arguments)]
