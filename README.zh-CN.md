@@ -77,6 +77,12 @@ MCP 工具面同时暴露，Agent 可以完全不用记命令。
 | `report` | 回传实测（`source=agent`），写入被测设备的 Harness Eval |
 | `feedback` | 提交反馈给厂商 |
 | `mcp` | 以 MCP stdio server 运行（14 个工具） |
+| `upgrade` | 从发布通道更新 `ratsa` 二进制自身 |
+
+`upgrade` 的存在原因：npm 包的版本号与 CLI 的 tag **相互独立**（见 `npm/README.zh-CN.md`），
+于是 npm 会一直判定 "up to date"、不再重跑 `postinstall`，**只改二进制的发布就传不到已经装过的
+用户手里**。`upgrade` 从 `RATSA_RELEASE_BASE` 拉 `ratsa-latest-<os>-<arch>`，按 `checksums.txt`
+校验后就地替换 `~/.ratsa/bin/ratsa`；校验不匹配时拒绝安装，且**不动**已有那份。
 
 环境变量（适合 CI / 容器，无需配置文件）：
 `RATSA_BASE_URL`、`RATSA_KEY_ID`、`RATSA_KEY_SECRET`、`RATSA_CONFIG`、`RATSA_HOME`、`RATSA_PASSWORD`。

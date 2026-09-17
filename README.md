@@ -84,6 +84,14 @@ The MCP tool surface is exposed at the same time, so an Agent never has to memor
 | `report` | Report a measured run (`source=agent`) into the device's Harness Eval |
 | `feedback` | Submit feedback to the vendor |
 | `mcp` | Run as an MCP stdio server (14 tools) |
+| `upgrade` | Update the `ratsa` binary itself from the release channel |
+
+`upgrade` exists because the npm package version is independent of the CLI release tag
+(see `npm/README.md`). npm therefore reports "up to date" forever and never re-runs our
+`postinstall`, so a binary-only release reaches nobody who already installed. `upgrade`
+fetches `ratsa-latest-<os>-<arch>` from `RATSA_RELEASE_BASE`, verifies it against
+`checksums.txt`, and replaces `~/.ratsa/bin/ratsa` in place — refusing to install (and
+leaving the existing binary untouched) if the checksum does not match.
 
 Environment variables (handy for CI / containers, no config file needed):
 `RATSA_BASE_URL`, `RATSA_KEY_ID`, `RATSA_KEY_SECRET`, `RATSA_CONFIG`, `RATSA_HOME`, `RATSA_PASSWORD`.

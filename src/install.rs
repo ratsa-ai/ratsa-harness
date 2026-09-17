@@ -609,7 +609,7 @@ fn current_bin() -> Result<String, String> {
 }
 
 /// Kept in sync with `homeBinPath()` in `npm/lib/platform.js`.
-fn bin_file_name() -> &'static str {
+pub(crate) fn bin_file_name() -> &'static str {
     if cfg!(target_os = "windows") {
         "ratsa.exe"
     } else {

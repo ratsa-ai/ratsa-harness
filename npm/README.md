@@ -38,6 +38,14 @@ fix reaches users without a pointless npm version bump, and an npm-only fix need
 rebuild. Earlier versions derived the URL from `package.json`, which forced the two to
 move together — do not reintroduce that.
 
+One consequence to keep in mind: **an installed user does not pick up a binary-only
+release by themselves.** Nothing re-runs `postinstall` while this package's version
+stays put, so npm cheerfully reports "up to date" while `~/.ratsa/bin/ratsa` stays
+frozen at install time. `ratsa upgrade` is the supported way out — it fetches from the
+release channel directly and does not involve npm at all. (Bumping this package's
+version does refresh the binary as a side effect, since `postinstall` runs again — a
+reason to bump when you want a rollout, never a reason to couple the numbers.)
+
 ### Binary release
 
 ```bash

@@ -955,7 +955,7 @@ pub fn verify_checksum(bytes: &[u8], headers: &Headers) -> Result<(), String> {
     Ok(())
 }
 
-fn sha256_hex(data: &[u8]) -> String {
+pub(crate) fn sha256_hex(data: &[u8]) -> String {
     let digest = ring::digest::digest(&ring::digest::SHA256, data);
     let mut out = String::with_capacity(digest.as_ref().len() * 2);
     for b in digest.as_ref() {

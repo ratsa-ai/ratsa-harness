@@ -20,6 +20,7 @@ mod commands;
 mod config;
 mod install;
 mod mcp;
+mod upgrade;
 
 use clap::{Args, Parser, Subcommand};
 
@@ -189,6 +190,12 @@ enum Command {
     },
     /// 以 MCP stdio 服务器方式运行（供 Agent 作为工具调用）
     Mcp,
+    /// 从发布通道更新 `ratsa` 自身
+    ///
+    /// npm 的 postinstall 只在新装/重装时运行，而包的版本号与 CLI 的 tag 相互独立
+    /// （见 npm/README.md 的版本策略）—— 于是只改二进制时，已安装的用户不会收到
+    /// 更新。这是那条通道之外唯一的更新入口。
+    Upgrade,
 }
 
 #[derive(Args, Debug)]
@@ -416,6 +423,7 @@ fn main() {
             }
         }
         Command::Mcp => mcp::serve(),
+        Command::Upgrade => upgrade::run(),
     };
 
     if let Err(e) = result {
