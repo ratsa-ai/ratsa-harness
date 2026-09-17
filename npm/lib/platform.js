@@ -86,11 +86,28 @@ function assetName(version) {
   return `ratsa-${version}-${platformTag()}${ext()}`
 }
 
-/** Resolution order: RATSA_BIN → vendored → ~/.ratsa/bin → local cargo build. */
+/**
+ * Resolution order: RATSA_BIN → ~/.ratsa/bin → vendored → local cargo build.
+ *
+ * `~/.ratsa/bin` deliberately outranks the vendored copy inside the package.
+ * The two are written together by `download()`, so on a fresh install they are
+ * the same bytes and the order does not matter — but they diverge the moment
+ * anything updates one of them, and then the order decides everything:
+ *
+ *   * `~/.ratsa/bin` is the copy that survives removing/reinstalling the package,
+ *     and it is what `install.sh` and the Rust side's `current_bin()` write.
+ *   * `vendor/` is frozen at install time. Because the package version is
+ *     independent of the CLI version, npm reports "up to date" forever and never
+ *     re-runs our postinstall — so a vendored copy can never refresh itself.
+ *
+ * Ranking the frozen copy first is what made those two diverge silently: the MCP
+ * entry we write says `~/.ratsa/bin/ratsa` while the process actually running was
+ * vendor's. Whoever went to debug that would be looking at the wrong file.
+ */
 function resolveBinary() {
   const candidates = []
   if (process.env.RATSA_BIN) candidates.push(process.env.RATSA_BIN)
-  candidates.push(vendorPath(), homeBinPath())
+  candidates.push(homeBinPath(), vendorPath())
   // Dev convenience: a build inside the repo (never used by published tarballs).
   for (const profile of ['release', 'debug']) {
     candidates.push(

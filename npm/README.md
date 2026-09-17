@@ -8,7 +8,7 @@ the real `ratsa` executable (downloading it if necessary) and execs it.
 ```
 npm/
   package.json      name=@ratsa/cli, bin={ratsa: bin/ratsa.js}, postinstall=install.js
-  bin/ratsa.js      resolution order: RATSA_BIN → vendor/ → ~/.ratsa/bin → local target/{release,debug}
+  bin/ratsa.js      resolution order: RATSA_BIN → ~/.ratsa/bin → vendor/ → local target/{release,debug}
   lib/platform.js   platform label, asset naming, resolution logic (same convention as scripts/build-release.sh)
   install.js        best-effort download (postinstall never fails), keeps a copy in vendor/
   README.md         English docs (this file — shown on the npm page)

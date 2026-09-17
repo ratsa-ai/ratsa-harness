@@ -1,6 +1,6 @@
 {
   "name": "@ratsa/cli",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "RATSA-Harness CLI — wire RATSA.ai into your Agent: install skill/MCP integrations, use a least-privilege key to search SOFs, generate and pull Harness Packages and SOF files, and report local evaluation results back",
   "keywords": [
     "ratsa",

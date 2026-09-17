@@ -8,7 +8,7 @@
 ```
 npm/
   package.json      name=@ratsa/cli, bin={ratsa: bin/ratsa.js}, postinstall=install.js
-  bin/ratsa.js      解析顺序：RATSA_BIN → vendor/ → ~/.ratsa/bin → 本地 target/{release,debug}
+  bin/ratsa.js      解析顺序：RATSA_BIN → ~/.ratsa/bin → vendor/ → 本地 target/{release,debug}
   lib/platform.js   平台标签、资产命名、解析逻辑（与 scripts/build-release.sh 同一约定）
   install.js        尽力下载（postinstall 永不失败），并留一份到 vendor/
   README.md         英文说明（npm 页面显示）
