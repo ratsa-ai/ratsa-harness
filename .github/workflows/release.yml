@@ -198,7 +198,7 @@ jobs:
   release:
     needs: [prepare, build]
     runs-on: ubuntu-22.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -237,3 +237,120 @@ jobs:
 
           echo "=== 已发布资产 ==="
           gh release view "$TAG" --json assets --jq '.assets[].name'
+
+      # ————————————————————————————————————————————————————————————————
+      # 镜像到华为云 OBS。对象键 == URL 路径，固定前缀 downloads/，这样
+      # ratsa.ai 的 nginx 只需把 /downloads/... 302 到桶域名，用 $request_uri
+      # 原样拼接即可，不需要任何 rewrite。前缀固定也让重定向不可能寻址到
+      # downloads/ 之外。
+      # ————————————————————————————————————————————————————————————————
+
+      # 凭据缺失时**跳过而不是失败**：fork、以及没配置镜像的部署不该因此变红。
+      # 一旦配置了就阻塞 —— OBS 是 ratsa.ai/downloads 的实际服务端，不是备份。
+      - name: 检查 OBS 凭据
+        id: obs
+        shell: bash
+        env:
+          OBS_AK: ${{ secrets.OBS_ACCESS_KEY_ID }}
+        run: |
+          set -euo pipefail
+          if [ -n "$OBS_AK" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::未配置 OBS_ACCESS_KEY_ID / OBS_SECRET_ACCESS_KEY，跳过华为云镜像。GitHub Releases 仍是完整通道，但 ratsa.ai/downloads 不会更新。"
+          fi
+
+      - name: 镜像到华为云 OBS
+        if: steps.obs.outputs.enabled == 'true'
+        shell: bash
+        working-directory: dist
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.OBS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.OBS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ap-southeast-3
+          # runner 上没有实例元数据服务，开着只会每次白等到超时
+          AWS_EC2_METADATA_DISABLED: "true"
+          # aws CLI v2 较新版本默认带 x-amz-checksum-crc32 与 aws-chunked 编码，
+          # OBS 的 S3 兼容层不认，会报 SignatureDoesNotMatch 或解析失败。
+          # 这两个变量不是可选的美化项，是能不能传上去的前提。
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+          OBS_ENDPOINT: https://obs.ap-southeast-3.myhuaweicloud.com
+          OBS_BUCKET: ratsa-ai
+          OBS_PREFIX: downloads
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          # 路径风格：不把桶名当子域名去解析，少一个 DNS/TLS 依赖
+          aws configure set default.s3.addressing_style path
+          aws --version
+          S3="s3://${OBS_BUCKET}/${OBS_PREFIX}/"
+          aws_s3() { aws s3 "$@" --endpoint-url "$OBS_ENDPOINT" --no-progress; }
+
+          echo "=== 1) 带版本号的资产：内容永不变 → 长缓存 ==="
+          # 刻意不加 --delete：旧版本的资产要留着，RATSA_VERSION=<旧版> 的安装才仍然可用
+          aws_s3 cp . "$S3" --recursive \
+            --exclude "ratsa-latest-*" --exclude "checksums*.txt" \
+            --content-type application/octet-stream \
+            --cache-control "public, max-age=31536000, immutable"
+
+          echo "=== 2) 版本无关别名：每次发版都变 → 绝不能长缓存 ==="
+          # 这里若图省事也套 immutable，已装过旧版的用户会一直拿到旧二进制：
+          # URL 没变、缓存不失效，属于极难排查的故障。
+          aws_s3 cp . "$S3" --recursive \
+            --exclude "*" --include "ratsa-latest-*" \
+            --content-type application/octet-stream \
+            --cache-control "no-cache"
+
+          echo "=== 3) checksums.txt 最后传 ==="
+          # 它是校验的唯一权威。先传会出现「新清单 + 旧二进制」→ 用户校验失败。
+          aws_s3 cp checksums.txt "${S3}checksums.txt" \
+            --content-type "text/plain; charset=utf-8" \
+            --cache-control "no-cache"
+          # 再留一份带版本号的清单，让旧版本的安装日后仍然可校验
+          aws_s3 cp checksums.txt "${S3}checksums-${VERSION}.txt" \
+            --content-type "text/plain; charset=utf-8" \
+            --cache-control "public, max-age=31536000, immutable"
+
+          echo "=== OBS 现有对象 ==="
+          aws_s3 ls "$S3"
+
+      # 这一步价值最高：一次抓出「桶策略没配好（403）」「前缀填错」
+      # 「传上去的是 HTML 而不是二进制」「二进制跑不起来」。
+      - name: OBS 冒烟测试
+        if: steps.obs.outputs.enabled == 'true'
+        shell: bash
+        env:
+          BASE: https://ratsa-ai.obs.ap-southeast-3.myhuaweicloud.com/downloads
+        run: |
+          set -euo pipefail
+
+          # 匿名列举必须被拒绝。若允许，evals/ 那类「顺序ID_原始文件名」的可猜键
+          # 会连同一切被一次性列出来，随机 token 提供的熵也就白费了。
+          list_code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 30 "$BASE/" || true)
+          if [ "$list_code" = "200" ]; then
+            echo "::error::匿名可以列举 OBS（$BASE/ 返回 200）。这在 OBS 里几乎总是因为把「桶 ACL」设成了公共读 —— 桶 ACL 的 Read 权限会映射到 ListBucket/ListBucketVersions。请改用「桶策略」里的公共读模板：它含 GetObject 但明确不含 ListBucket。"
+            exit 1
+          fi
+          echo "匿名列举被拒（HTTP $list_code），符合预期"
+
+          # 匿名 GET，不带任何签名。403 说明桶策略没放通，nginx 跳过去也会是 403。
+          code=$(curl -sS -o /tmp/ratsa -w '%{http_code}' --max-time 180 "$BASE/ratsa-latest-linux-x64")
+          if [ "$code" != "200" ]; then
+            echo "::error::OBS 匿名下载返回 $code（检查桶策略是否放通 downloads/* 的匿名 GetObject）"
+            exit 1
+          fi
+
+          # 真的执行一次。runner 是 ubuntu-22.04，与构建该资产的基线一致。
+          chmod +x /tmp/ratsa
+          /tmp/ratsa --version
+
+          # 清单与内容必须对得上
+          curl -fsSL --max-time 60 "$BASE/checksums.txt" -o /tmp/checksums.txt
+          want=$(awk '$2=="ratsa-latest-linux-x64"{print $1}' /tmp/checksums.txt)
+          [ -n "$want" ] || { echo "::error::checksums.txt 里找不到 ratsa-latest-linux-x64"; exit 1; }
+          got=$(sha256sum /tmp/ratsa | awk '{print $1}')
+          [ "$want" = "$got" ] || { echo "::error::OBS 上的二进制与 checksums.txt 不一致"; exit 1; }
+          echo "OBS 冒烟测试通过：匿名可读、可执行、哈希与清单一致"
