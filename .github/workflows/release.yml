@@ -1,0 +1,178 @@
+name: Release
+
+# Tag 驱动的发布：push 一个 `v*` tag，就在原生 runner 上构建各平台二进制，
+# 生成 checksums.txt，创建 GitHub Release 并上传全部产物。
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# 【命名契约 —— 改这里必须同步改另外两处】
+#   * npm/lib/platform.js 的 assetName()   —— npm 包装按这个拼下载 URL
+#   * scripts/build-release.sh             —— 本地构建走同一套命名
+# 产物名：ratsa-<version>-<os>-<arch>[.exe]，os ∈ {darwin,linux,windows}。
+# 另外每个平台多传一份版本无关的稳定别名 ratsa-latest-<os>-<arch>[.exe]。
+#
+# 发布后该通道可用（见 README「环境变量」）：
+#   RATSA_RELEASE_BASE=https://github.com/ratsa-ai/ratsa-harness/releases/download/v0.1.0
+#
+# 用原生 runner 而不是交叉编译：`ring` 有平台相关汇编，交叉编译容易踩坑；
+# 而且 GitHub 的 runner 已预装 Rust，无需引入第三方 toolchain action。
+
+on:
+  push:
+    tags: ["v*"]
+  # 手动重跑：在 UI 里选择对应的 tag 作为 ref（选分支会在 version 作业里被拒）。
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # 先把版本号定下来，并确认 tag 与 Cargo.toml 一致。
+  # 产物名里嵌了 version，如果 tag 和 Cargo.toml 对不上，用户按 tag 拼出来的
+  # URL 会和实际资产名错位 —— 宁可在构建前就失败。
+  version:
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: read
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          if [ -z "$version" ]; then
+            echo "::error::无法从 Cargo.toml 读出 version" >&2
+            exit 1
+          fi
+
+          if [ "${GITHUB_REF_TYPE}" != "tag" ]; then
+            echo "::error::必须在 tag 上运行（当前 ref=${GITHUB_REF_NAME}，type=${GITHUB_REF_TYPE}）。" >&2
+            exit 1
+          fi
+
+          if [ "v${version}" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} 与 Cargo.toml 的 version ${version} 不一致" >&2
+            exit 1
+          fi
+
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "版本已确认：${version}"
+
+  build:
+    needs: version
+    # 一个平台挂了不要连坐，其余平台仍然产出，方便只重跑失败的那个。
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14 # Apple Silicon
+            os: darwin
+            arch: arm64
+          - runner: macos-13 # Intel
+            os: darwin
+            arch: x64
+          # 用 22.04 而不是 ubuntu-latest：glibc 基线更低，老发行版上跑得起来。
+          - runner: ubuntu-22.04
+            os: linux
+            arch: x64
+          - runner: ubuntu-24.04-arm
+            os: linux
+            arch: arm64
+          - runner: windows-latest
+            os: windows
+            arch: x64
+          # 注意：这个 runner label 是唯一没法离线确认的一项。
+          # 若该作业卡在排队 / 找不到 runner，删掉这三行即可，其余平台不受影响。
+          - runner: windows-11-arm
+            os: windows
+            arch: arm64
+
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # 不用 build-release.sh：那个脚本硬编码了 `--offline`，是给本地增量构建用的；
+      # CI 是干净机器，依赖根本没进 cargo cache，--offline 必然失败。
+      - name: 构建
+        shell: bash
+        run: cargo build --release --locked
+
+      - name: 按约定命名
+        shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          OS: ${{ matrix.os }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+
+          ext=""
+          if [ "$OS" = "windows" ]; then ext=".exe"; fi
+
+          src="target/release/ratsa${ext}"
+          if [ ! -f "$src" ]; then
+            echo "::error::找不到构建产物 $src" >&2
+            exit 1
+          fi
+
+          mkdir -p dist
+          cp "$src" "dist/ratsa-${VERSION}-${OS}-${ARCH}${ext}"
+          cp "$src" "dist/ratsa-latest-${OS}-${ARCH}${ext}"
+          chmod +x dist/* 2>/dev/null || true
+
+          ls -l dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ratsa-${{ matrix.os }}-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  # checksums.txt 在这里统一生成：针对「即将上传的那批文件」算，而不是各平台各算一份再合并。
+  release:
+    needs: [version, build]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: 生成 checksums.txt
+        shell: bash
+        working-directory: dist
+        run: |
+          set -euo pipefail
+          # 用裸文件名（不要 ./*），否则 checksums.txt 里的路径会带 ./ 前缀，
+          # 而 install.js 之后是按 basename 去查的。
+          sha256sum * > checksums.txt
+          echo "--- checksums.txt ---"
+          cat checksums.txt
+
+      - name: 创建或更新 Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG 已存在，覆盖上传"
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* \
+              --title "RATSA-Harness ${TAG}" \
+              --generate-notes
+          fi
+
+          echo "=== 已发布资产 ==="
+          gh release view "$TAG" --json assets --jq '.assets[].name'
