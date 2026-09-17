@@ -59,7 +59,29 @@ function releaseBase() {
   return (process.env.RATSA_RELEASE_BASE || 'https://ratsa.ai/downloads').replace(/\/+$/, '')
 }
 
-/** Asset name convention shared with `scripts/build-release.sh`. */
+/**
+ * 要下载哪个发布版本，默认 `latest`。
+ *
+ * 与 install.sh 的 `VERSION="${RATSA_VERSION:-latest}"`（server 侧 cli_release.go）
+ * 是同一套约定 —— 两条通道对「不指定版本时拿什么」必须给同一个答案，否则 npm 用户
+ * 和 shell 用户会拿到不同版本。
+ *
+ * 刻意不取 package.json 的 version：那个值跟 release 资产之间没有任何强校验，
+ * 一旦 npm 发了新版本而 release 没跟上，所有安装都会 404。这里改为跟随 latest，
+ * 想要钉住版本就显式设 RATSA_VERSION（允许带 v 前缀）。
+ */
+function releaseVersion() {
+  const v = (process.env.RATSA_VERSION || '').trim().replace(/^v/, '')
+  return v || 'latest'
+}
+
+/**
+ * Asset name convention shared with `scripts/build-release.sh`.
+ *
+ * `version` 既可以是具体版本号，也可以是字面量 `'latest'` —— 后者会拼出
+ * `ratsa-latest-<os>-<arch>[.exe]`，即发版流程额外产出的版本无关别名。
+ * 这里刻意不写分支：别名由模板自然得出，加分支反而会让两条通道的命名漂移。
+ */
 function assetName(version) {
   return `ratsa-${version}-${platformTag()}${ext()}`
 }
@@ -88,6 +110,7 @@ module.exports = {
   homeBinPath,
   isExecutable,
   releaseBase,
+  releaseVersion,
   assetName,
   resolveBinary,
 }

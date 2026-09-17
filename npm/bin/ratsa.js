@@ -11,31 +11,36 @@ const { resolveBinary, releaseBase } = require('../lib/platform.js')
 
 function main() {
   let bin = resolveBinary()
+  let why = null
 
   if (!bin) {
     // First run: try to fetch the release binary (best effort, never throws).
     try {
-      const { download } = require('../install.js')
-      bin = download({ silent: false })
+      const install = require('../install.js')
+      bin = install.download({ silent: false })
+      if (!bin) why = install.lastError()
     } catch {
       /* fall through to the message below */
     }
   }
 
   if (!bin) {
-    process.stderr.write(
-      [
-        '未找到 ratsa 可执行文件。',
-        '',
-        '任选一种方式：',
-        '  1) 从发布通道下载：RATSA_RELEASE_BASE=' + releaseBase() + ' npx ratsa --version',
-        '  2) 用 Rust 自行编译：cargo install --path ratsa-harness',
-        '  3) 已有二进制：RATSA_BIN=/path/to/ratsa npx ratsa …',
-        '',
-        '详见 https://ratsa.ai/harness',
-        '',
-      ].join('\n'),
+    const lines = ['未找到 ratsa 可执行文件。']
+    if (why) {
+      // 把原因原样带出来：校验不通过和「没网」的处置方式完全不同，不能混成一句。
+      lines.push('', `自动下载未成功，原因：${why}`)
+    }
+    lines.push(
+      '',
+      '任选一种方式：',
+      '  1) 从发布通道下载：RATSA_RELEASE_BASE=' + releaseBase() + ' npx ratsa --version',
+      '  2) 用 Rust 自行编译：cargo install --path ratsa-harness',
+      '  3) 已有二进制：RATSA_BIN=/path/to/ratsa npx ratsa …',
+      '',
+      '详见 https://ratsa.ai/harness',
+      '',
     )
+    process.stderr.write(lines.join('\n'))
     process.exit(1)
   }
 
