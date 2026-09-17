@@ -23,24 +23,45 @@ npm/
 - Offline or firewalled environments: `postinstall` silently skips, `npx @ratsa/cli` retries on first
   run, and if that fails too it prints the `cargo install --path ratsa-harness` alternative.
 
-## Release process (one-time)
+## Release process
+
+**Two independent releases.** What you changed decides what to bump:
+
+| Changed | Bump | Tag `vX.Y.Z` | `npm publish` |
+|---|---|---|---|
+| the CLI binary (`src/`) | `Cargo.toml` **and** `Cargo.lock` | yes | no |
+| this package (`install.js` / `lib/` / `bin/`) | `npm/package.json` | no | yes |
+
+They are independent because `install.js` resolves the download URL from `latest`
+(override with `RATSA_VERSION`), not from this package's own version. So a binary-only
+fix reaches users without a pointless npm version bump, and an npm-only fix needs no
+rebuild. Earlier versions derived the URL from `package.json`, which forced the two to
+move together — do not reintroduce that.
+
+### Binary release
 
 ```bash
-# 1) Build per-platform artifacts + copy the current platform's binary into npm/vendor/
-cd ratsa-harness && ./scripts/build-release.sh --all --vendor-npm
+# 1) bump `version` in Cargo.toml AND Cargo.lock. The lock file matters: CI builds
+#    with `cargo build --locked`, which fails outright if the lock is stale.
+# 2) commit, then tag — pushing the tag is what starts the release:
+git tag vX.Y.Z && git push origin vX.Y.Z
+```
 
-# 2) Upload dist/ to the release channel (either way; asset naming must match)
-#    a) the /downloads directory on ratsa.ai (default RATSA_RELEASE_BASE)
-#    b) GitHub Releases:
-#       RATSA_RELEASE_BASE=https://github.com/<org>/<repo>/releases/download/v0.1.0
-#    Assets: ratsa-<version>-<os>-<arch>[.exe] + checksums.txt
+CI (`.github/workflows/release.yml`) then builds all six platform targets, publishes
+`ratsa-<version>-<os>-<arch>[.exe]` + `checksums.txt` to the GitHub Release, and mirrors
+the same set plus the `ratsa-latest-<os>-<arch>[.exe]` aliases to Huawei OBS behind
+`https://ratsa.ai/downloads`. Those `ratsa-latest-*` aliases are exactly what makes the
+two releases independent — they are the name every install fetches.
 
-# 3) Local check (publishing not required)
-node npm/bin/ratsa.js --version
+Offline fallback / CI down: `./scripts/build-release.sh --all --vendor-npm` produces the
+same asset names under `dist/`; upload them wherever `RATSA_RELEASE_BASE` points.
+
+### npm package release
+
+```bash
+node npm/bin/ratsa.js --version   # local sanity check
 node npm/bin/ratsa.js agents
-
-# 4) Publish
-cd npm && npm publish --access public
+cd npm && npm publish             # registry + access are pinned by publishConfig
 ```
 
 Published as **`@ratsa/cli`**. The unscoped name `ratsa` is rejected by npm's typosquatting check

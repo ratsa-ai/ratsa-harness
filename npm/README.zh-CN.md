@@ -23,24 +23,43 @@ npm/
 - 离线/被墙环境里 postinstall 会安静跳过，`npx @ratsa/cli` 首次运行再试一次，仍失败则打印
   `cargo install --path ratsa-harness` 的替代方案。
 
-## 发布流程（一次性）
+## 发布流程
+
+**两种发布彼此独立。** 改了什么决定动哪个版本号：
+
+| 改的是 | 要动 | 打 tag `vX.Y.Z` | `npm publish` |
+|---|---|---|---|
+| CLI 二进制（`src/`） | `Cargo.toml` **和** `Cargo.lock` | 要 | 不要 |
+| 本包（`install.js` / `lib/` / `bin/`） | `npm/package.json` | 不要 | 要 |
+
+之所以能独立，是因为 `install.js` 拼下载地址用的是 `latest`（可用 `RATSA_VERSION` 覆盖），
+而不是本包自己的版本号。于是只改二进制时不必白白发一次 npm，只改 npm 时也不必重新构建。
+早先的实现是从 `package.json` 取版本号，逼得两者必须同进同退 —— 别再退回去。
+
+### 二进制发布
 
 ```bash
-# 1. 产出各平台产物 + 把当前平台二进制塞进 npm/vendor/
-cd ratsa-harness && ./scripts/build-release.sh --all --vendor-npm
+# 1. 改 Cargo.toml 的 version，并同步 Cargo.lock。Cargo.lock 不能漏：
+#    CI 用 `cargo build --locked`，lock 过期会直接构建失败。
+# 2. 提交，然后打 tag —— 推 tag 才是触发发布的动作：
+git tag vX.Y.Z && git push origin vX.Y.Z
+```
 
-# 2. 把 dist/ 传到发布通道（二选一，asset 命名必须一致）
-#    a) ratsa.ai 的 /downloads 目录（默认 RATSA_RELEASE_BASE）
-#    b) GitHub Releases：
-#       RATSA_RELEASE_BASE=https://github.com/<org>/<repo>/releases/download/v0.1.0
-#    产物：ratsa-<version>-<os>-<arch>[.exe] + checksums.txt
+随后 CI（`.github/workflows/release.yml`）会构建全部 6 个平台目标，把
+`ratsa-<version>-<os>-<arch>[.exe]` + `checksums.txt` 发到 GitHub Release，
+并把同一批外加 `ratsa-latest-<os>-<arch>[.exe]` 别名镜像到华为云 OBS
+（对外即 `https://ratsa.ai/downloads`）。**那批 `ratsa-latest-*` 别名正是两种发布
+得以独立的原因** —— 所有安装实际取的就是这个名字。
 
-# 3. 本地验证（不需要发布）
-node npm/bin/ratsa.js --version
+离线兜底 / CI 故障：`./scripts/build-release.sh --all --vendor-npm` 会在 `dist/`
+下产出同样的资产名，传到 `RATSA_RELEASE_BASE` 指向的地方即可。
+
+### npm 包发布
+
+```bash
+node npm/bin/ratsa.js --version   # 本地自检
 node npm/bin/ratsa.js agents
-
-# 4. 发布
-cd npm && npm publish --access public
+cd npm && npm publish             # 目标 registry 与 access 由 publishConfig 固定
 ```
 
 以 **`@ratsa/cli`** 发布。无作用域名 `ratsa` 被 npm 的防抢注检查拒绝（"too similar to
