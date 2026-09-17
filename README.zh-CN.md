@@ -7,23 +7,23 @@
 
 ```bash
 # 1. 装（六种 Agent 目标，见下）
-npx ratsa install --agent all           # 当前项目
-npx ratsa install --agent all --global  # 你的用户目录（每个工作区都能用）
-npx ratsa agents                        # 支持哪些 Agent / 各写哪些文件
+npx @ratsa/cli install --agent all           # 当前项目
+npx @ratsa/cli install --agent all --global  # 你的用户目录（每个工作区都能用）
+npx @ratsa/cli agents                        # 支持哪些 Agent / 各写哪些文件
 
 # 2. 凭证（推荐：自选权限 + 绑定归属）
-npx ratsa login --email you@example.com
-npx ratsa scopes
-npx ratsa keys create --name laptop-agent \
+npx @ratsa/cli login --email you@example.com
+npx @ratsa/cli scopes
+npx @ratsa/cli keys create --name laptop-agent \
   --scopes sof:read,harness:read,package:pull --bound-slug your-handle --use
 
 # 3. 闭环
-npx ratsa whoami
-npx ratsa search 舵机
-npx ratsa package <slug> --meta   # 平台官方生成设备 Harness 包（先看描述）
-npx ratsa package <slug>          # 下载（自动校验 sha256）
-npx ratsa sof-file <slug>         # 拉取 SOF 文件（可回灌）
-npx ratsa report <slug> --score 88 --passed 22 --failed 2
+npx @ratsa/cli whoami
+npx @ratsa/cli search 舵机
+npx @ratsa/cli package <slug> --meta   # 平台官方生成设备 Harness 包（先看描述）
+npx @ratsa/cli package <slug>          # 下载（自动校验 sha256）
+npx @ratsa/cli sof-file <slug>         # 拉取 SOF 文件（可回灌）
+npx @ratsa/cli report <slug> --score 88 --passed 22 --failed 2
 ```
 
 ## 为什么是 CLI + 插件，而不是又一个 SDK
@@ -136,11 +136,11 @@ cargo build --offline            # 依赖已缓存时可离线构建
 ./scripts/build-release.sh --all --vendor-npm   # 各平台产物 + npm/vendor/ 内置当前平台二进制
 ```
 
-`npx ratsa` 依靠 `npm/` 下的**启动器包**（不打包二进制，运行时解析或下载，见 `npm/README.zh-CN.md`）：
+`npx @ratsa/cli` 依靠 `npm/` 下的**启动器包**（不打包二进制，运行时解析或下载，见 `npm/README.zh-CN.md`）：
 
 ```bash
 node npm/bin/ratsa.js --version   # 本地验证
-cd npm && npm publish --access public
+cd npm && npm publish             # 目标 registry 与 access 由 package.json 的 publishConfig 固定
 ```
 
 发布通道由 `RATSA_RELEASE_BASE` 指定（默认 `https://ratsa.ai/downloads`，也可指向 GitHub

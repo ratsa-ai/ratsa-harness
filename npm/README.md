@@ -2,12 +2,12 @@
 
 **English** · [中文](./README.zh-CN.md)
 
-Makes `npx ratsa …` work. This package **does not bundle a binary** — it is a launcher: it finds
+Makes `npx @ratsa/cli …` work. This package **does not bundle a binary** — it is a launcher: it finds
 the real `ratsa` executable (downloading it if necessary) and execs it.
 
 ```
 npm/
-  package.json      name=ratsa, bin={ratsa: bin/ratsa.js}, postinstall=install.js
+  package.json      name=@ratsa/cli, bin={ratsa: bin/ratsa.js}, postinstall=install.js
   bin/ratsa.js      resolution order: RATSA_BIN → vendor/ → ~/.ratsa/bin → local target/{release,debug}
   lib/platform.js   platform label, asset naming, resolution logic (same convention as scripts/build-release.sh)
   install.js        best-effort download (postinstall never fails), keeps a copy in vendor/
@@ -20,7 +20,7 @@ npm/
 - The tarball is only a few KB, so `npm i` never slows down or fails over a 2.5 MB binary download.
 - One `npm publish` covers macOS / Linux / Windows (x64 + arm64).
 - The binary lives in `~/.ratsa/bin/`, **immune to `npx` cache cleaning**.
-- Offline or firewalled environments: `postinstall` silently skips, `npx ratsa` retries on first
+- Offline or firewalled environments: `postinstall` silently skips, `npx @ratsa/cli` retries on first
   run, and if that fails too it prints the `cargo install --path ratsa-harness` alternative.
 
 ## Release process (one-time)
@@ -43,9 +43,11 @@ node npm/bin/ratsa.js agents
 cd npm && npm publish --access public
 ```
 
-`ratsa` / `@ratsa/cli` / `ratsa-harness` are all currently unclaimed on npm (checked 2026-09-10;
-the registry returned 404). If `ratsa` gets taken later, switch to the scoped `@ratsa/cli` and keep
-the `bin` name as `ratsa` (`npx @ratsa/cli …`).
+Published as **`@ratsa/cli`**. The unscoped name `ratsa` is rejected by npm's typosquatting check
+("too similar to existing packages ramda,nats"). That check runs *only at publish time*, so a
+registry `404` does **not** mean a name is publishable — `ratsa` returned 404 and still could not be
+published. The `bin` name stays `ratsa`, so once installed the command is plain `ratsa`; only the
+`npx` form carries the scope.
 
 ## Environment variables
 
@@ -58,6 +60,6 @@ the `bin` name as `ratsa` (`npx @ratsa/cli …`).
 
 ## Unrelated but often confused
 
-`npx ratsa mcp` **inherits stdin/stdout** (MCP is a stdio protocol); the launcher uses
+`npx @ratsa/cli mcp` **inherits stdin/stdout** (MCP is a stdio protocol); the launcher uses
 `spawnSync(bin, args, { stdio: 'inherit' })` and forwards the exit code and signals — do not turn
 stdio into a pipe when editing this file, or the Agent-side handshake will hang.

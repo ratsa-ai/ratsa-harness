@@ -2,7 +2,7 @@
 //
 // The npm package is a **thin launcher**, not a bundled binary per platform:
 // it resolves (or downloads) the real `ratsa` executable and then execs it. That
-// keeps the tarball tiny and makes `npx ratsa …` work on macOS / Linux / Windows
+// keeps the tarball tiny and makes `npx @ratsa/cli …` work on macOS / Linux / Windows
 // with the same publish.
 
 const os = require('os')

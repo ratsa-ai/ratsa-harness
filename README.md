@@ -7,23 +7,23 @@ Wire RATSA.ai into **the Agent you already use**: install a skill / MCP server, 
 
 ```bash
 # 1) Install (six agent targets, see below)
-npx ratsa install --agent all           # current project
-npx ratsa install --agent all --global  # your home directory (works in every workspace)
-npx ratsa agents                        # which agents are supported / which files get written
+npx @ratsa/cli install --agent all           # current project
+npx @ratsa/cli install --agent all --global  # your home directory (works in every workspace)
+npx @ratsa/cli agents                        # which agents are supported / which files get written
 
 # 2) Credentials (recommended: choose scopes + bind an owning account)
-npx ratsa login --email you@example.com
-npx ratsa scopes
-npx ratsa keys create --name laptop-agent \
+npx @ratsa/cli login --email you@example.com
+npx @ratsa/cli scopes
+npx @ratsa/cli keys create --name laptop-agent \
   --scopes sof:read,harness:read,package:pull --bound-slug your-handle --use
 
 # 3) The loop
-npx ratsa whoami
-npx ratsa search servo
-npx ratsa package <slug> --meta   # platform-generated device Harness package (describe only)
-npx ratsa package <slug>          # download (sha256 verified)
-npx ratsa sof-file <slug>         # fetch the SOF file (can be posted back)
-npx ratsa report <slug> --score 88 --passed 22 --failed 2
+npx @ratsa/cli whoami
+npx @ratsa/cli search servo
+npx @ratsa/cli package <slug> --meta   # platform-generated device Harness package (describe only)
+npx @ratsa/cli package <slug>          # download (sha256 verified)
+npx @ratsa/cli sof-file <slug>         # fetch the SOF file (can be posted back)
+npx @ratsa/cli report <slug> --score 88 --passed 22 --failed 2
 ```
 
 ## Why a CLI + plugin instead of yet another SDK
@@ -147,12 +147,12 @@ cargo build --offline            # offline build once dependencies are cached
 ./scripts/build-release.sh --all --vendor-npm   # per-platform artifacts + npm/vendor/ with the current platform binary
 ```
 
-`npx ratsa` relies on the **launcher package** in `npm/` (it does not embed binaries — it
+`npx @ratsa/cli` relies on the **launcher package** in `npm/` (it does not embed binaries — it
 resolves or downloads one at runtime, see `npm/README.md`):
 
 ```bash
 node npm/bin/ratsa.js --version   # local check
-cd npm && npm publish --access public
+cd npm && npm publish             # registry + access are pinned by package.json's publishConfig
 ```
 
 The release channel is set by `RATSA_RELEASE_BASE` (defaults to `https://ratsa.ai/downloads`;

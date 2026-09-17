@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// `npx ratsa …` entry point.
+// `npx @ratsa/cli …` entry point.
 //
 // Resolves the real binary (vendored → ~/.ratsa/bin → local build), downloads it
 // on first use when missing, then execs it with stdio inherited. Inherited stdio
@@ -33,9 +33,9 @@ function main() {
     lines.push(
       '',
       '任选一种方式：',
-      '  1) 从发布通道下载：RATSA_RELEASE_BASE=' + releaseBase() + ' npx ratsa --version',
+      '  1) 从发布通道下载：RATSA_RELEASE_BASE=' + releaseBase() + ' npx @ratsa/cli --version',
       '  2) 用 Rust 自行编译：cargo install --path ratsa-harness',
-      '  3) 已有二进制：RATSA_BIN=/path/to/ratsa npx ratsa …',
+      '  3) 已有二进制：RATSA_BIN=/path/to/ratsa npx @ratsa/cli …',
       '',
       '详见 https://ratsa.ai/harness',
       '',
