@@ -44,5 +44,9 @@
     "x64",
     "arm64"
   ],
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
   "license": "MIT"
 }
