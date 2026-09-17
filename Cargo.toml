@@ -1,6 +1,6 @@
 [package]
 name = "ratsa-harness"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "RATSA-Harness：本地 Agent 侧的 RATSA.ai 接入命令行（插件 / Skill 安装 + 最小权限 key + Harness Package 拉取与结果回传）"
 license = "MIT"
