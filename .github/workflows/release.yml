@@ -5,6 +5,11 @@ name: Release
 #
 #   git tag v0.1.0 && git push origin v0.1.0
 #
+# 【重跑】不要用 Run 页面上的 "Re-run all jobs" —— 它沿用该 run 当时的提交里的
+# 工作流，也就是 tag 指向的那个旧版本；工作流本身写错时重跑等于白跑。
+# 正确做法是 Actions → Release → Run workflow，分支选 main，tag 填 v0.1.0。
+# 这样用的是 main 上的当前工作流，去发布一个已存在的 tag，不需要动 tag。
+#
 # 【命名契约 —— 改这里必须同步改另外两处】
 #   * npm/lib/platform.js 的 assetName()   —— npm 包装按这个拼下载 URL
 #   * scripts/build-release.sh             —— 本地构建走同一套命名
@@ -20,8 +25,12 @@ name: Release
 on:
   push:
     tags: ["v*"]
-  # 手动重跑：在 UI 里选择对应的 tag 作为 ref（选分支会在 version 作业里被拒）。
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "要发布的 tag，例如 v0.1.0"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -30,20 +39,39 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # 先把版本号定下来，并确认 tag 与 Cargo.toml 一致。
+  # 先把「发布哪个 tag / 哪个版本」定下来，并做一致性校验。
   # 产物名里嵌了 version，如果 tag 和 Cargo.toml 对不上，用户按 tag 拼出来的
   # URL 会和实际资产名错位 —— 宁可在构建前就失败。
-  version:
+  prepare:
     runs-on: ubuntu-22.04
+    timeout-minutes: 10
     outputs:
-      version: ${{ steps.read.outputs.version }}
+      tag: ${{ steps.resolve.outputs.tag }}
+      version: ${{ steps.resolve.outputs.version }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # 手动触发时发布指定 tag 的内容；tag push 时就用该 tag 自身。
+          ref: ${{ inputs.tag || github.ref }}
 
-      - id: read
+      - id: resolve
         shell: bash
+        env:
+          # 经 env 传入而不是直接插进脚本，避免把外部输入拼进 shell。
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
+
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            tag="$INPUT_TAG"
+          else
+            tag="${GITHUB_REF_NAME}"
+          fi
+
+          case "$tag" in
+            v*) ;;
+            *) echo "::error::tag 必须以 v 开头，收到 '${tag}'" >&2; exit 1 ;;
+          esac
 
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
           if [ -z "$version" ]; then
@@ -51,25 +79,18 @@ jobs:
             exit 1
           fi
 
-          if [ "${GITHUB_REF_TYPE}" != "tag" ]; then
-            echo "::error::必须在 tag 上运行（当前 ref=${GITHUB_REF_NAME}，type=${GITHUB_REF_TYPE}）。" >&2
+          if [ "v${version}" != "${tag}" ]; then
+            echo "::error::tag ${tag} 与 Cargo.toml 的 version ${version} 不一致" >&2
             exit 1
           fi
 
-          if [ "v${version}" != "${GITHUB_REF_NAME}" ]; then
-            echo "::error::tag ${GITHUB_REF_NAME} 与 Cargo.toml 的 version ${version} 不一致" >&2
-            exit 1
-          fi
-
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
-          echo "版本已确认：${version}"
+          echo "将发布 ${tag}（version ${version}）"
 
   build:
-    needs: version
+    needs: prepare
     # 一个平台挂了不要连坐，其余平台仍然产出，方便只重跑失败的那个。
-    # 排队时间也算在 timeout 内：万一某个 runner label 失效，作业会在 30 分钟后
-    # 明确失败，而不是无限期卡在 queued 把整个 release 拖住（macos-13 就是这样）。
-    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -94,15 +115,18 @@ jobs:
           - runner: windows-latest
             os: windows
             arch: x64
-          # 注意：这个 runner label 是唯一没法离线确认的一项。
-          # 若该作业卡在排队 / 找不到 runner，删掉这三行即可，其余平台不受影响。
           - runner: windows-11-arm
             os: windows
             arch: arm64
 
     runs-on: ${{ matrix.runner }}
+    # 排队时间也算在 timeout 内：万一某个 runner label 失效，作业会在 30 分钟后
+    # 明确失败，而不是无限期卡在 queued 把整个 release 拖住（macos-13 就是这样）。
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
 
       - name: 准备交叉编译目标
         if: matrix.target != ''
@@ -118,7 +142,6 @@ jobs:
         run: |
           set -euo pipefail
           if [ -n "$TARGET" ]; then
-            # 指定 --target 时产物落在 target/<triple>/release/ 而不是 target/release/
             cargo build --release --locked --target "$TARGET"
           else
             cargo build --release --locked
@@ -127,7 +150,7 @@ jobs:
       - name: 按约定命名
         shell: bash
         env:
-          VERSION: ${{ needs.version.outputs.version }}
+          VERSION: ${{ needs.prepare.outputs.version }}
           OS: ${{ matrix.os }}
           ARCH: ${{ matrix.arch }}
           TARGET: ${{ matrix.target }}
@@ -137,11 +160,13 @@ jobs:
           ext=""
           if [ "$OS" = "windows" ]; then ext=".exe"; fi
 
+          # 指定 --target 时产物落在 target/<triple>/release/，不是 target/release/
           if [ -n "$TARGET" ]; then
             src="target/${TARGET}/release/ratsa${ext}"
           else
             src="target/release/ratsa${ext}"
           fi
+
           if [ ! -f "$src" ]; then
             echo "::error::找不到构建产物 $src" >&2
             exit 1
@@ -163,7 +188,7 @@ jobs:
 
   # checksums.txt 在这里统一生成：针对「即将上传的那批文件」算，而不是各平台各算一份再合并。
   release:
-    needs: [version, build]
+    needs: [prepare, build]
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     steps:
@@ -188,10 +213,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ needs.prepare.outputs.tag }}
         run: |
           set -euo pipefail
 
+          # 可重入：手动重跑时 release 已存在，走覆盖上传而不是报错退出。
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Release $TAG 已存在，覆盖上传"
             gh release upload "$TAG" dist/* --clobber
