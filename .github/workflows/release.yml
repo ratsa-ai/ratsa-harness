@@ -298,8 +298,13 @@ jobs:
         run: |
           set -euo pipefail
 
-          # 路径风格：不把桶名当子域名去解析，少一个 DNS/TLS 依赖
-          aws configure set default.s3.addressing_style path
+          # OBS **要求**虚拟主机名风格，也就是控制台里的「访问域名」
+          # (bucket.obs.<region>.myhuaweicloud.com)。
+          # 首跑实测：设成 path 会让每一个对象都失败，报
+          #   VirtualHostDomainRequired: Virtual host domain is required
+          #   while accessing a specific bucket.
+          # 不要把它「优化」回 path —— 这行看着多余，实际是 OBS 的硬要求。
+          aws configure set default.s3.addressing_style virtual
           aws --version
           S3="s3://${OBS_BUCKET}/${OBS_PREFIX}/"
           aws_s3() { aws s3 "$@" --endpoint-url "$OBS_ENDPOINT" --no-progress; }
@@ -330,7 +335,9 @@ jobs:
             --cache-control "public, max-age=31536000, immutable"
 
           echo "=== OBS 现有对象 ==="
-          aws_s3 ls "$S3"
+          # 纯展示。aws s3 cp 从本地往上传并不需要 ListBucket，所以这里列不出来
+          # 不代表上传有问题 —— 不要让一条给人看的信息把发布判失败。
+          aws_s3 ls "$S3" || echo "(列出失败：多半是该 IAM 用户没有 ListBucket 权限；上传本身不受影响)"
 
       # 这一步价值最高：一次抓出「桶策略没配好（403）」「前缀填错」
       # 「传上去的是 HTML 而不是二进制」「二进制跑不起来」。
