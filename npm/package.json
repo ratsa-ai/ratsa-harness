@@ -24,6 +24,7 @@
   },
   "files": [
     "bin/",
+    "lib/",
     "install.js",
     "README.md",
     "README.zh-CN.md"
