@@ -67,6 +67,9 @@ jobs:
   build:
     needs: version
     # 一个平台挂了不要连坐，其余平台仍然产出，方便只重跑失败的那个。
+    # 排队时间也算在 timeout 内：万一某个 runner label 失效，作业会在 30 分钟后
+    # 明确失败，而不是无限期卡在 queued 把整个 release 拖住（macos-13 就是这样）。
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -74,9 +77,13 @@ jobs:
           - runner: macos-14 # Apple Silicon
             os: darwin
             arch: arm64
-          - runner: macos-13 # Intel
+          # 故意不用 macos-13（Intel）：该 runner 已被 GitHub 弃用，实测排 10 分钟
+          # 也拿不到机器，会一直卡在 queued。改成在 arm64 的 macos-14 上交叉编译
+          # —— Apple 工具链本就能同时出 x86_64，比赌一个正在退役的 runner 稳。
+          - runner: macos-14
             os: darwin
             arch: x64
+            target: x86_64-apple-darwin
           # 用 22.04 而不是 ubuntu-latest：glibc 基线更低，老发行版上跑得起来。
           - runner: ubuntu-22.04
             os: linux
@@ -97,11 +104,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: 准备交叉编译目标
+        if: matrix.target != ''
+        shell: bash
+        run: rustup target add ${{ matrix.target }}
+
       # 不用 build-release.sh：那个脚本硬编码了 `--offline`，是给本地增量构建用的；
       # CI 是干净机器，依赖根本没进 cargo cache，--offline 必然失败。
       - name: 构建
         shell: bash
-        run: cargo build --release --locked
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          if [ -n "$TARGET" ]; then
+            # 指定 --target 时产物落在 target/<triple>/release/ 而不是 target/release/
+            cargo build --release --locked --target "$TARGET"
+          else
+            cargo build --release --locked
+          fi
 
       - name: 按约定命名
         shell: bash
@@ -109,13 +130,18 @@ jobs:
           VERSION: ${{ needs.version.outputs.version }}
           OS: ${{ matrix.os }}
           ARCH: ${{ matrix.arch }}
+          TARGET: ${{ matrix.target }}
         run: |
           set -euo pipefail
 
           ext=""
           if [ "$OS" = "windows" ]; then ext=".exe"; fi
 
-          src="target/release/ratsa${ext}"
+          if [ -n "$TARGET" ]; then
+            src="target/${TARGET}/release/ratsa${ext}"
+          else
+            src="target/release/ratsa${ext}"
+          fi
           if [ ! -f "$src" ]; then
             echo "::error::找不到构建产物 $src" >&2
             exit 1
@@ -139,6 +165,7 @@ jobs:
   release:
     needs: [version, build]
     runs-on: ubuntu-22.04
+    timeout-minutes: 15
     steps:
       - uses: actions/download-artifact@v4
         with:
