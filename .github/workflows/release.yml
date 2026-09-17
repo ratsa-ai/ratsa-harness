@@ -252,14 +252,29 @@ jobs:
         shell: bash
         env:
           OBS_AK: ${{ secrets.OBS_ACCESS_KEY_ID }}
+          OBS_SK: ${{ secrets.OBS_SECRET_ACCESS_KEY }}
         run: |
           set -euo pipefail
-          if [ -n "$OBS_AK" ]; then
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-          else
+
+          # 两个都没配 → 这个部署就是不镜像，跳过而非失败（fork、未启用镜像的部署不该变红）。
+          if [ -z "$OBS_AK" ] && [ -z "$OBS_SK" ]; then
             echo "enabled=false" >> "$GITHUB_OUTPUT"
             echo "::warning::未配置 OBS_ACCESS_KEY_ID / OBS_SECRET_ACCESS_KEY，跳过华为云镜像。GitHub Releases 仍是完整通道，但 ratsa.ai/downloads 不会更新。"
+            exit 0
           fi
+
+          # 只配了一半是最容易踩的坑：AK 在而 SK 缺时，aws CLI 要等到真正上传
+          # 才报 "Partial credentials found in env, missing: AWS_SECRET_ACCESS_KEY"，
+          # 信息埋在几十行日志里，看起来像上传失败而不是配置缺失。这里提前点名。
+          missing=""
+          [ -n "$OBS_AK" ] || missing="$missing OBS_ACCESS_KEY_ID"
+          [ -n "$OBS_SK" ] || missing="$missing OBS_SECRET_ACCESS_KEY"
+          if [ -n "$missing" ]; then
+            echo "::error::以下仓库 Secret 不存在或为空：$missing 。两个都必须配。注意必须建在 Repository secrets（Settings → Secrets and variables → Actions → Repository secrets）；若是建在 Environment secrets，本作业读不到 —— 它没有声明 environment。"
+            exit 1
+          fi
+
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
 
       - name: 镜像到华为云 OBS
         if: steps.obs.outputs.enabled == 'true'
