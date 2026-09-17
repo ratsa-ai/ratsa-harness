@@ -28,7 +28,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "要发布的 tag，例如 v0.1.0"
+        description: "要发布的 tag，例如 v0.1.0（注意：上方的 'Use workflow from' 必须保持 main，不能选这个 tag）"
         required: true
         type: string
 
@@ -63,6 +63,14 @@ jobs:
           set -euo pipefail
 
           if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            # "Use workflow from" 下拉框必须是 main。若选了 tag，GitHub 加载的是
+            # 那个 tag 里当时的工作流文件 —— main 上的修复一律不生效，而且会
+            # 静默地按旧矩阵构建（踩过：选成 v0.1.0 后仍在跑 macos-13）。
+            # GITHUB_REF_NAME 因此是那个 tag 而不是 main，这里直接拦下。
+            if [ "${GITHUB_REF_TYPE}" != "branch" ]; then
+              echo "::error::'Use workflow from' 必须选 main，当前是 ${GITHUB_REF_TYPE}:${GITHUB_REF_NAME} —— 选 tag 会用该 tag 里的旧工作流" >&2
+              exit 1
+            fi
             tag="$INPUT_TAG"
           else
             tag="${GITHUB_REF_NAME}"
