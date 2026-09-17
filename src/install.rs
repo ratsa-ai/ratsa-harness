@@ -25,7 +25,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 
-use crate::config::Config;
+use crate::config::{home_dir, Config};
 
 pub const TARGETS: [&str; 6] = ["claude", "mcp", "cursor", "copilot", "agents", "codex"];
 
@@ -578,13 +578,43 @@ fn vscode_user_prompts() -> Option<PathBuf> {
         })
 }
 
+/// The binary path we write into an Agent's config (MCP `command`, etc.).
+///
+/// This value is long-lived — it lands in `.mcp.json` / `config.toml` and is read
+/// by the Agent on every later launch — so it must point at a path that outlives
+/// whatever installed us.
+///
+/// `current_exe()` is the tempting default, but when we were launched by the npm
+/// wrapper it resolves to the copy *inside the package*
+/// (`node_modules/@ratsa/cli/vendor/...`). That path's lifetime depends entirely
+/// on the package: remove/reinstall it and the config dangles, and for the
+/// `npx @ratsa/cli install ...` route (no local install) npm parks the package in
+/// `~/.npm/_npx/<hash>/`, which the cache is free to evict at any time.
+///
+/// `~/.ratsa/bin` is the copy both install paths deliberately keep outside the
+/// package (npm's postinstall writes it; `install.sh` writes it), so prefer it
+/// and fall back to `current_exe()` only when it is absent — a `cargo install`
+/// build, for instance, never creates it.
 fn current_bin() -> Result<String, String> {
     if let Ok(p) = env::var("RATSA_HARNESS_BIN") {
         return Ok(p);
     }
+    let stable = home_dir().join("bin").join(bin_file_name());
+    if stable.is_file() {
+        return Ok(stable.display().to_string());
+    }
     env::current_exe()
         .map(|p| p.display().to_string())
         .map_err(|e| e.to_string())
+}
+
+/// Kept in sync with `homeBinPath()` in `npm/lib/platform.js`.
+fn bin_file_name() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "ratsa.exe"
+    } else {
+        "ratsa"
+    }
 }
 
 fn display_path(p: &Path) -> String {
