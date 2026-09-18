@@ -125,13 +125,28 @@ enum Command {
         #[arg(long)]
         out: Option<String>,
     },
-    /// 拉取 SOF 文件（规范化文档，可直接回灌 POST /api/sof）
+    /// 拉取 SOF 文件（规范化文档，可直接回灌）
     SofFile {
         /// SOF 的 slug
         slug: String,
         /// 落盘目录（默认 ~/.ratsa/sof）
         #[arg(long)]
         out: Option<String>,
+    },
+    /// 创建或更新 SOF（把 SOF 文件回灌到平台；需 sof:write 权限）
+    ///
+    /// 输入就是 `sof-file` 拉下来的那份（或手工整理的同类文件），
+    /// `component` 块与 `POST/PUT /api/sof` 同构。不传 `--slug` 则新建，
+    /// 传了则更新该 slug。
+    SofPush {
+        /// SOF 文件路径（kind=ratsa.sof.json）
+        file: String,
+        /// 更新已有 SOF 时传它的 slug；省略则新建
+        #[arg(long)]
+        slug: Option<String>,
+        /// 只校验文件与要提交的内容，不真的提交
+        #[arg(long)]
+        dry_run: bool,
     },
     /// 回传本地实测结果（Harness Eval，source=agent）
     Report {
@@ -378,6 +393,11 @@ fn main() {
             let slug = api::slug_or_url(&slug);
             let out = out.unwrap_or_default();
             commands::sof_file_cmd(&client, &slug, &out).map(|s| print!("{s}"))
+        }
+        Command::SofPush { file, slug, dry_run } => {
+            let client = api::Client::new(&cfg);
+            commands::sof_push_cmd(&client, &file, slug.as_deref(), dry_run)
+                .map(|s| print!("{s}"))
         }
         Command::Report {
             slug,

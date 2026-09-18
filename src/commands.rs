@@ -641,8 +641,116 @@ pub fn sof_file_cmd(client: &Client, slug: &str, out_dir: &str) -> Result<String
     let mut out = format!("已拉取 SOF 文件（{slug}）\n");
     out.push_str(&format!("  落盘 : {}\n", file.display()));
     out.push_str(&format!("  大小 : {size} 字节\n"));
-    out.push_str("  内容 : kind=ratsa.sof.json，`component` 与 `POST/PUT /api/sof` 同构（可直接回灌）\n");
-    out.push_str(&format!("  回灌 : 见包内 tools/import-sof.py，或 POST /api/sof（需 sof:write 权限）\n"));
+    out.push_str("  内容 : kind=ratsa.sof.json，`component` 与 `POST/PUT /api/sof` 同构\n");
+    out.push_str(&format!(
+        "  回灌 : ratsa sof-push {slug}.sof.json   （改动后重传；需 sof:write 权限）\n"
+    ));
+    Ok(out)
+}
+
+// ---------------------------------------------------------------- SOF push
+
+/// 把一份 SOF 文件回灌到平台（新建或更新）。
+///
+/// 输入就是 `sof-file` 拉下来的那份 —— `kind=ratsa.sof.json`，`component` 块
+/// 与 `POST/PUT /api/sof` 同构。不传 `slug` 走 POST（新建），传了走 PUT（更新该 slug）。
+///
+/// ⚠️ **四个字段要序列化成字符串**：`spec` / `certification` / `skills` /
+/// `agentic_spec` 在库里是 TEXT 列，而 SOF 文件里它们是**展开的 JSON**
+/// （为了可读）。不转的话服务端按 JSON 对象收，落库就成 `map[...]` 而不是原文。
+/// 这与包内 `tools/import-sof.py` 的处理是同一件事。
+///
+/// 端点是 `/api/v1/sof`（key 路径），需要该 key 带 `sof:write`。
+pub fn sof_push_cmd(
+    client: &Client,
+    file: &str,
+    slug: Option<&str>,
+    dry_run: bool,
+) -> Result<String, String> {
+    let path = PathBuf::from(file);
+    let raw = std::fs::read_to_string(&path)
+        .map_err(|e| format!("读不了 {}：{e}", path.display()))?;
+    let doc: Value = serde_json::from_str(&raw)
+        .map_err(|e| format!("{} 不是合法 JSON：{e}", path.display()))?;
+
+    let comp = doc
+        .get("component")
+        .ok_or("文件里没有 `component` 块（应为 kind=ratsa.sof.json）")?;
+    if !comp.is_object() {
+        return Err("`component` 不是对象".into());
+    }
+
+    // 展开的 JSON 字段 -> 字符串；已经是字符串的原样保留
+    let mut body = comp.clone();
+    let mut coerced: Vec<&str> = Vec::new();
+    for f in ["spec", "certification", "skills", "agentic_spec"] {
+        let Some(v) = comp.get(f) else { continue };
+        if v.is_null() {
+            continue;
+        }
+        if v.is_string() {
+            continue;
+        }
+        let s = serde_json::to_string(v).map_err(|e| format!("{f} 序列化失败：{e}"))?;
+        body[f] = Value::String(s);
+        coerced.push(f);
+    }
+
+    let name = comp.get("name").and_then(|v| v.as_str()).unwrap_or("（未填）");
+    let category = comp.get("category").and_then(|v| v.as_str()).unwrap_or("（未填）");
+
+    if dry_run {
+        let mut out = format!("（dry-run，未提交）\n 文件 : {}\n", path.display());
+        out.push_str(&format!(" 名称 : {name}\n 类别 : {category}\n"));
+        out.push_str(&format!(
+            " 动作 : {}\n",
+            match slug {
+                Some(s) => format!("更新 PUT /api/v1/sof/{s}"),
+                None => "新建 POST /api/v1/sof".into(),
+            }
+        ));
+        if !coerced.is_empty() {
+            out.push_str(&format!(" 转字符串 : {}\n", coerced.join(", ")));
+        }
+        out.push_str(&format!(" 体积 : {} 字节\n", body.to_string().len()));
+        return Ok(out);
+    }
+
+    let resp = match slug {
+        Some(s) => client.put(&format!("/api/v1/sof/{s}"), &body)?,
+        None => client.post("/api/v1/sof", &body)?,
+    };
+    if resp.status >= 400 {
+        return Err(format!(
+            "{}失败（HTTP {}）：{}",
+            if slug.is_some() { "更新" } else { "创建" },
+            resp.status,
+            resp.error_message()
+        ));
+    }
+
+    let v: Value = serde_json::from_str(&resp.body).unwrap_or(json!({}));
+    let item = v.get("item").cloned().unwrap_or(json!({}));
+    let got = item.get("slug").and_then(|x| x.as_str()).unwrap_or("");
+    let got_name = item.get("name").and_then(|x| x.as_str()).unwrap_or(name);
+
+    let mut out = format!(
+        "{}成功\n",
+        if slug.is_some() { "更新" } else { "创建" }
+    );
+    out.push_str(&format!(" 名称 : {got_name}\n"));
+    if !got.is_empty() {
+        out.push_str(&format!(" slug : {got}\n"));
+        out.push_str(&format!(" 链接 : https://ratsa.ai/sof/{got}\n"));
+    }
+    if !coerced.is_empty() {
+        out.push_str(&format!(" 转换 : {} 已序列化为字符串\n", coerced.join(", ")));
+    }
+    if slug.is_none() && !got.is_empty() {
+        out.push_str(" 提示 : 记住这个 slug —— 重传要用它（`sof-push <file> --slug " );
+        out.push_str(got);
+        out.push_str("`）\n");
+    }
     Ok(out)
 }
 

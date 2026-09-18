@@ -128,6 +128,12 @@ impl Client {
         self.send(self.agent.post(&url), Some(body))
     }
 
+    /// PUT 一个 JSON body。更新类端点（如 `PUT /api/v1/sof/{slug}`）用。
+    pub fn put(&self, path: &str, body: &Value) -> Result<Response, String> {
+        let url = format!("{}{}", self.base, path);
+        self.send(self.agent.put(&url), Some(body))
+    }
+
     pub fn delete(&self, path: &str) -> Result<Response, String> {
         let url = format!("{}{}", self.base, path);
         self.send(self.agent.delete(&url), None)
