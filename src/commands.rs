@@ -754,6 +754,285 @@ pub fn sof_push_cmd(
     Ok(out)
 }
 
+// ---------------------------------------------------------------- SOF upload
+
+/// 平台未声明上限时的兜底值。**正常情况下应以上限为准从 `/api/meta` 读**，
+/// 免得改上限要重发客户端。
+const DEFAULT_MAX_UPLOAD_BYTES: i64 = 50 << 20;
+
+/// `assets/` 子目录 -> 资源类型。与 `sof/README.md` 的分层表一致。
+///
+/// `images/` **刻意不在表里**：产品图走 `POST /api/sof/{slug}/images`，
+/// 不进 resources（它们是封面图，不是可下载的附件）。
+fn resource_type_for_dir(dir: &str) -> Option<&'static str> {
+    match dir {
+        "docs" => Some("document"),
+        "drawings" => Some("drawing"),
+        "tools" => Some("devtool"),
+        "firmware" => Some("firmware"),
+        _ => None,
+    }
+}
+
+/// 带类型的待上传文件。
+struct Pending {
+    path: std::path::PathBuf,
+    name: String,
+    size: i64,
+    r#type: String,
+}
+
+/// 收文件。`from_assets` 时按 `assets/<子目录>/` 判类型，否则一律用 `fallback_type`。
+fn collect_files(paths: &[String], from_assets: bool, fallback_type: &str) -> Result<Vec<Pending>, String> {
+    let mut out = Vec::new();
+    for p in paths {
+        let base = std::path::PathBuf::from(p);
+        if base.is_file() {
+            let size = std::fs::metadata(&base).map(|m| m.len() as i64).unwrap_or(0);
+            out.push(Pending {
+                name: base.file_name().unwrap_or_default().to_string_lossy().to_string(),
+                path: base,
+                size,
+                r#type: fallback_type.to_string(),
+            });
+            continue;
+        }
+        if !base.is_dir() {
+            return Err(format!("路径不存在：{p}"));
+        }
+        // 目录：--from-assets 时只收 assets/<已知子目录>/，其余一律不进
+        // （避免把 sop.json / README.md / _incoming 里的大件也传上去）。
+        let root = if from_assets { base.join("assets") } else { base.clone() };
+        if from_assets && !root.is_dir() {
+            return Err(format!("{} 下没有 assets/ 目录", base.display()));
+        }
+        let mut stack = vec![root.clone()];
+        while let Some(d) = stack.pop() {
+            let entries = std::fs::read_dir(&d).map_err(|e| format!("读不了 {}：{e}", d.display()))?;
+            for e in entries.flatten() {
+                let path = e.path();
+                if path.is_dir() {
+                    stack.push(path);
+                    continue;
+                }
+                let rel_dir = path
+                    .parent()
+                    .and_then(|x| x.strip_prefix(&root).ok())
+                    .and_then(|x| x.components().next())
+                    .map(|c| c.as_os_str().to_string_lossy().to_string())
+                    .unwrap_or_default();
+                let ty = if from_assets {
+                    match resource_type_for_dir(&rel_dir) {
+                        Some(t) => t.to_string(),
+                        None => continue, // images/ 等不进 resources
+                    }
+                } else {
+                    fallback_type.to_string()
+                };
+                let size = std::fs::metadata(&path).map(|m| m.len() as i64).unwrap_or(0);
+                out.push(Pending {
+                    name: path.file_name().unwrap_or_default().to_string_lossy().to_string(),
+                    path,
+                    size,
+                    r#type: ty,
+                });
+            }
+        }
+    }
+    out.sort_by(|a, b| a.path.cmp(&b.path));
+    Ok(out)
+}
+
+/// 从 `/api/meta` 问出本部署的上传上限；拿不到则回退内置默认并**如实说明**。
+fn resolve_max_bytes(client: &Client) -> (i64, bool) {
+    let v = client.get("/api/meta").map(|r| r.json()).unwrap_or(Value::Null);
+    match v.pointer("/upload/max_bytes").and_then(|x| x.as_i64()) {
+        Some(n) if n > 0 => (n, false),
+        _ => (DEFAULT_MAX_UPLOAD_BYTES, true),
+    }
+}
+
+pub fn sof_upload_cmd(
+    client: &Client,
+    slug: &str,
+    paths: &[String],
+    from_assets: bool,
+    type_opt: Option<&str>,
+    dry_run: bool,
+    json_out: bool,
+) -> Result<String, String> {
+    if paths.is_empty() {
+        return Err("请给出要上传的文件或目录".into());
+    }
+    // **先在本地判断大小**，在读 meta 之前 —— 上限本身要问服务端，但过滤不能等。
+    let (max_bytes, used_default) = resolve_max_bytes(client);
+
+    let fallback = type_opt.unwrap_or("other");
+    let all = collect_files(paths, from_assets, fallback)?;
+    if all.is_empty() {
+        return Err("没有找到可上传的文件（--from-assets 只收 assets/{docs,drawings,tools,firmware}/）".into());
+    }
+
+    // ★ 本地过滤：超限文件**一个字节都不发**，直接计入跳过。
+    let mut sendable: Vec<Pending> = Vec::new();
+    let mut skipped: Vec<(String, i64)> = Vec::new();
+    for f in all {
+        if f.size > max_bytes {
+            skipped.push((f.name, f.size));
+        } else {
+            sendable.push(f);
+        }
+    }
+
+    if dry_run {
+        let mut s = String::from("（dry-run，未请求票据、未上传）\n");
+        s.push_str(&format!(" 上限 : {} 字节（{:.1} MiB）", max_bytes, max_bytes as f64 / 1048576.0));
+        s.push_str(if used_default { "  ← 服务端未声明，用的是本地默认值\n" } else { "\n" });
+        s.push_str(&format!(" 将上传 {} 个：\n", sendable.len()));
+        for f in &sendable {
+            s.push_str(&format!("   ✓ {:>8} B  [{}] {}\n", f.size, f.r#type, f.name));
+        }
+        if !skipped.is_empty() {
+            s.push_str(&format!(" 跳过 {} 个（超限）：\n", skipped.len()));
+            for (n, sz) in &skipped {
+                s.push_str(&format!("   ✗ {n}（{sz} > {max_bytes}）\n"));
+            }
+            s.push_str(" 超限的文件请自行上传到别处，再用资源外链提交。\n");
+        }
+        return Ok(s);
+    }
+    if sendable.is_empty() {
+        return Err(format!(
+            "{} 个文件全部超过上限（{} 字节），没有可上传的",
+            skipped.len(),
+            max_bytes
+        ));
+    }
+
+    // —— 取票据（一次覆盖整批）——
+    let files: Vec<Value> = sendable
+        .iter()
+        .map(|f| json!({"name": f.name, "size": f.size, "type": f.r#type}))
+        .collect();
+    let resp = client.post(
+        &format!("/api/v1/sof/{slug}/upload-ticket"),
+        &json!({"files": files}),
+    )?;
+    if resp.status >= 400 {
+        return Err(format!("取上传票据失败：{}", resp.error_message()));
+    }
+    let body = resp.json();
+    let t = &body["ticket"];
+    let ticket = crate::obs::Ticket {
+        endpoint: t["endpoint"].as_str().unwrap_or("").to_string(),
+        region: t["region"].as_str().unwrap_or("").to_string(),
+        bucket: t["bucket"].as_str().unwrap_or("").to_string(),
+        path_style: t["path_style"].as_bool().unwrap_or(false),
+        access_key: t["access_key"].as_str().unwrap_or("").to_string(),
+        secret_key: t["secret_key"].as_str().unwrap_or("").to_string(),
+        security_token: t["security_token"].as_str().unwrap_or("").to_string(),
+    };
+    if ticket.access_key.is_empty() || ticket.security_token.is_empty() {
+        return Err("票据里没有凭证（服务端未开启直传？）".into());
+    }
+
+    // 服务端为每个文件定了 key 与 url —— **按名字对齐**，
+    // 客户端不自己拼 URL，也不自己定 key。
+    let objects: Vec<crate::obs::Object> = body["objects"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .map(|o| crate::obs::Object {
+                    name: o["name"].as_str().unwrap_or("").to_string(),
+                    key: o["key"].as_str().unwrap_or("").to_string(),
+                    url: o["url"].as_str().unwrap_or("").to_string(),
+                    content_type: o["content_type"].as_str().unwrap_or("application/octet-stream").to_string(),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // —— 逐个 PUT 并回填 ——
+    let mut uploaded: Vec<Value> = Vec::new();
+    let mut failed: Vec<(String, String)> = Vec::new();
+    for f in &sendable {
+        let Some(obj) = objects.iter().find(|o| o.name == f.name) else {
+            failed.push((f.name.clone(), "服务端没给这个文件的落点".into()));
+            continue;
+        };
+        let bytes = match std::fs::read(&f.path) {
+            Ok(b) => b,
+            Err(e) => {
+                failed.push((f.name.clone(), format!("读不了：{e}")));
+                continue;
+            }
+        };
+        match crate::obs::put_object(&ticket, &obj.key, &bytes, &obj.content_type) {
+            Ok(_) => uploaded.push(json!({
+                // url **原样用服务端给的**，不自己拼 —— 两边拼法不一致是这类功能的经典 bug 源
+                "type": f.r#type, "name": f.name, "url": obj.url,
+                "size_bytes": f.size, "checksum": sha256_hex(&bytes),
+            })),
+            Err(e) => failed.push((f.name.clone(), e)),
+        }
+    }
+
+    // —— 回填 resources ——
+    // 走独立的 resources 端点，**不要走 PUT /api/sof/:id**：那条是整体更新，
+    // 其中 Description 是无条件覆盖的，会把描述清空。
+    let mut wrote = false;
+    if !uploaded.is_empty() {
+        let r = client.post(
+            &format!("/api/v1/sof/{slug}/resources"),
+            &json!({"resources": uploaded}),
+        )?;
+        if r.status >= 400 {
+            return Err(format!(
+                "文件已上传成功（{} 个），但回填资源失败：{} —— \
+                 请用 `ratsa sof-file {slug}` 拿到当前资源后手工补 url",
+                uploaded.len(),
+                r.error_message()
+            ));
+        }
+        wrote = true;
+    }
+
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&json!({
+            "uploaded": uploaded, "failed": failed.iter().map(|(n, e)| json!({"name": n, "error": e})).collect::<Vec<_>>(),
+            "skipped": skipped.iter().map(|(n, s)| json!({"name": n, "size": s})).collect::<Vec<_>>(),
+            "resources_written": wrote,
+        }))
+        .unwrap_or_default());
+    }
+
+    let mut s = String::new();
+    for u in &uploaded {
+        s.push_str(&format!(
+            " ✓ {} → {}\n",
+            u["name"].as_str().unwrap_or(""),
+            u["url"].as_str().unwrap_or("")
+        ));
+    }
+    for (n, e) in &failed {
+        s.push_str(&format!(" ✗ {n}：{e}\n"));
+    }
+    for (n, sz) in &skipped {
+        s.push_str(&format!(" ⤫ {n}（{sz} > {max_bytes}）\n"));
+    }
+    s.push_str(&format!(
+        "\n上传 {} / 失败 {} / 跳过（超限）{}",
+        uploaded.len(),
+        failed.len(),
+        skipped.len()
+    ));
+    s.push_str(if wrote { "\n资源已回填。\n" } else { "\n（没有需要回填的资源）\n" });
+    if !skipped.is_empty() {
+        s.push_str("超限的文件请自行上传到别处，再用资源外链提交。\n");
+    }
+    Ok(s)
+}
+
 // ------------------------------------------------------------ knowledge base
 
 /// kb_path builds `/api/v1/kb` with the optional `sof` / `type` filters.

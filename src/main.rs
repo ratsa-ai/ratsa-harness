@@ -20,6 +20,7 @@ mod commands;
 mod config;
 mod install;
 mod mcp;
+mod obs;
 mod upgrade;
 
 use clap::{Args, Parser, Subcommand};
@@ -147,6 +148,28 @@ enum Command {
         /// 只校验文件与要提交的内容，不真的提交
         #[arg(long)]
         dry_run: bool,
+    },
+    /// 上传附件并回填到 SOF 的资源里（直传 OBS，需 sof:write 权限）
+    ///
+    /// 与 `sof-push` 分工明确：`sof-push` 只推结构化 JSON（资源只有名字没有地址），
+    /// 本命令把**本地文件**变成地址并回填 resources。二者不重叠。
+    SofUpload {
+        /// SOF 的 slug
+        slug: String,
+        /// 文件或目录；配合 --from-assets 时按 assets/ 分层自动归类
+        paths: Vec<String>,
+        /// 把路径当作组件目录，按 assets/{docs,drawings,tools}/ 自动定资源类型
+        #[arg(long)]
+        from_assets: bool,
+        /// 资源类型（单选文件时用）；取值同平台的 resource_types
+        #[arg(long)]
+        r#type: Option<String>,
+        /// 只列清单，不请求票据、不上传
+        #[arg(long)]
+        dry_run: bool,
+        /// 输出原始 JSON
+        #[arg(long)]
+        json: bool,
     },
     /// 回传本地实测结果（Harness Eval，source=agent）
     Report {
@@ -398,6 +421,14 @@ fn main() {
             let client = api::Client::new(&cfg);
             commands::sof_push_cmd(&client, &file, slug.as_deref(), dry_run)
                 .map(|s| print!("{s}"))
+        }
+        Command::SofUpload { slug, paths, from_assets, r#type, dry_run, json } => {
+            let client = api::Client::new(&cfg);
+            let slug = api::slug_or_url(&slug);
+            commands::sof_upload_cmd(
+                &client, &slug, &paths, from_assets, r#type.as_deref(), dry_run, json,
+            )
+            .map(|s| print!("{s}"))
         }
         Command::Report {
             slug,
