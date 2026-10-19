@@ -1301,6 +1301,740 @@ pub fn submit_feedback(
     Ok(out)
 }
 
+// ------------------------------------------------------------------ RATSA Lab
+
+fn lab_ok(resp: api::Response) -> Result<Value, String> {
+    if resp.status >= 400 {
+        return Err(resp.error_message());
+    }
+    Ok(resp.json())
+}
+
+fn read_json_file(path: &str) -> Result<Value, String> {
+    let text = std::fs::read_to_string(path).map_err(|e| format!("读取 {path} 失败：{e}"))?;
+    serde_json::from_str(&text).map_err(|e| format!("{path} 不是合法 JSON：{e}"))
+}
+
+fn labs_of(v: &Value) -> Vec<Value> {
+    v.get("items")
+        .and_then(|x| x.as_array())
+        .cloned()
+        .unwrap_or_default()
+}
+
+fn lab_field<'a>(lab: &'a Value, key: &str) -> &'a str {
+    lab.get(key).and_then(|x| x.as_str()).unwrap_or("")
+}
+
+fn status_text(status: &str) -> &str {
+    match status {
+        "draft" => "草稿",
+        "pending" => "审核中",
+        "approved" => "已通过",
+        "rejected" => "未通过",
+        _ => status,
+    }
+}
+
+/// List the acting account's labs. There is intentionally no public lab list:
+/// Bio/Chem/Env/Materials labs are private to their owner (or bound account).
+pub fn lab_list(client: &Client, json_out: bool) -> Result<String, String> {
+    let v = lab_ok(client.get("/api/v1/labs")?)?;
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+    }
+    let items = labs_of(&v);
+    if items.is_empty() {
+        return Ok(
+            "没有可管理的 Lab：任何登录账号都可自助创建。\n\
+             用 `ratsa lab apply <profile.json>` 建档，再 `ratsa lab upload <slug> <file> --kind license` 上传资料、`--submit` 提交审核；\n\
+             也可以直接在站点 /lab 创建。\n"
+                .into(),
+        );
+    }
+    let mut out = String::from("slug        领域       状态      Agent   名称\n");
+    for it in items {
+        out.push_str(&format!(
+            "{:<11} {:<9} {:<8} {:<8} {}\n",
+            lab_field(&it, "slug"),
+            lab_field(&it, "vertical"),
+            status_text(lab_field(&it, "status")),
+            if it
+                .get("agent_ready")
+                .and_then(|x| x.as_bool())
+                .unwrap_or(false)
+            {
+                "yes"
+            } else {
+                "no"
+            },
+            lab_field(&it, "name"),
+        ));
+    }
+    Ok(out)
+}
+
+/// Read one lab (profile + services + records + materials + applications).
+pub fn lab_get(client: &Client, slug: &str, json_out: bool) -> Result<String, String> {
+    let v = lab_ok(client.get(&format!("/api/v1/labs/{slug}"))?)?;
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+    }
+    let lab = v.get("lab").cloned().unwrap_or(Value::Null);
+    let n = |key: &str| {
+        lab.get(key)
+            .and_then(|x| x.as_array())
+            .map(|a| a.len())
+            .unwrap_or(0)
+    };
+    let mut out = format!(
+        "{}  [{}]\nslug      : {}\n状态      : {}\nAgent     : {}\n领域      : {}\n",
+        lab_field(&lab, "name"),
+        lab_field(&lab, "vertical"),
+        lab_field(&lab, "slug"),
+        status_text(lab_field(&lab, "status")),
+        if lab
+            .get("agent_ready")
+            .and_then(|x| x.as_bool())
+            .unwrap_or(false)
+        {
+            "可接入"
+        } else {
+            "未声明"
+        },
+        lab_field(&lab, "vertical"),
+    );
+    if !lab_field(&lab, "description").is_empty() {
+        out.push_str(&format!("简介      : {}\n", lab_field(&lab, "description")));
+    }
+    if !lab_field(&lab, "review_note").is_empty() {
+        out.push_str(&format!("审核意见  : {}\n", lab_field(&lab, "review_note")));
+    }
+    out.push_str(&format!(
+        "资料      : {}\n服务      : {}\n过往服务  : {}\n",
+        n("documents"),
+        n("services"),
+        n("records")
+    ));
+    out.push_str(&format!(
+        "\n下一步：ratsa lab spec {slug}   /   ratsa lab services {slug}\n"
+    ));
+    Ok(out)
+}
+
+/// Create / update the lab profile from a JSON file; `submit` also files the
+/// application (materials must be uploaded first).
+pub fn lab_apply(
+    client: &Client,
+    file: &str,
+    submit: bool,
+    note: &str,
+    json_out: bool,
+) -> Result<String, String> {
+    let body = read_json_file(file)?;
+    if !body.is_object() {
+        return Err("Lab 档案 JSON 必须是对象（字段同 POST /api/lab）".into());
+    }
+    let saved = lab_ok(client.post("/api/v1/labs", &body)?)?;
+    let mut result = saved.clone();
+    if submit {
+        result = lab_ok(client.post("/api/v1/labs/apply", &json!({ "note": note }))?)?;
+    }
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&result).unwrap_or_default());
+    }
+    let lab = result.get("lab").cloned().unwrap_or(result);
+    let mut out = format!(
+        "{}已保存：{}（{}）\n",
+        if submit {
+            "档案已提交审核："
+        } else {
+            "档案"
+        },
+        lab_field(&lab, "name"),
+        lab_field(&lab, "slug"),
+    );
+    out.push_str(&format!(
+        "状态：{}\n",
+        status_text(lab_field(&lab, "status"))
+    ));
+    if submit && lab_field(&lab, "status") == "pending" {
+        out.push_str("提示：平台运营审核资料后才能维护服务与过往服务记录。\n");
+    }
+    Ok(out)
+}
+
+/// Show the application / review status.
+pub fn lab_status(client: &Client, slug: &str, json_out: bool) -> Result<String, String> {
+    let v = lab_ok(client.get(&format!("/api/v1/labs/{slug}"))?)?;
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+    }
+    let lab = v.get("lab").cloned().unwrap_or(Value::Null);
+    let mut out = format!(
+        "{}（{}）\n状态：{}\n",
+        lab_field(&lab, "name"),
+        lab_field(&lab, "slug"),
+        status_text(lab_field(&lab, "status"))
+    );
+    for key in ["submitted_at", "reviewed_at"] {
+        if !lab_field(&lab, key).is_empty() {
+            out.push_str(&format!("{key}：{}\n", lab_field(&lab, key)));
+        }
+    }
+    if !lab_field(&lab, "review_note").is_empty() {
+        out.push_str(&format!("审核意见：{}\n", lab_field(&lab, "review_note")));
+    }
+    Ok(out)
+}
+
+/// Delete the caller's lab (materials, services and records go with it).
+pub fn lab_delete(client: &Client, slug: &str) -> Result<String, String> {
+    lab_ok(client.delete(&format!("/api/v1/labs/{slug}"))?)?;
+    Ok(format!("已删除 Lab {slug}（含资料、服务与过往服务记录）\n"))
+}
+
+fn content_type_for(path: &str) -> &'static str {
+    match std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase()
+        .as_str()
+    {
+        "pdf" => "application/pdf",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "txt" => "text/plain",
+        "md" => "text/markdown",
+        "csv" => "text/csv",
+        "json" => "application/json",
+        "zip" => "application/zip",
+        "doc" => "application/msword",
+        "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        _ => "application/octet-stream",
+    }
+}
+
+/// Upload one credential / equipment / SOP file to the caller's lab.
+pub fn lab_upload(
+    client: &Client,
+    slug: &str,
+    file: &str,
+    kind: &str,
+    json_out: bool,
+) -> Result<String, String> {
+    let data = std::fs::read(file).map_err(|e| format!("读取 {file} 失败：{e}"))?;
+    let name = std::path::Path::new(file)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("material.bin");
+    let resp = client.post_multipart(
+        &format!("/api/v1/labs/{slug}/documents"),
+        "file",
+        name,
+        content_type_for(file),
+        &[("kind", kind)],
+        &data,
+    )?;
+    let v = lab_ok(resp)?;
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+    }
+    let doc = v.get("document").cloned().unwrap_or(Value::Null);
+    Ok(format!(
+        "已上传 {}（{}，{} 字节）\n",
+        lab_field(&doc, "name"),
+        lab_field(&doc, "kind"),
+        data.len()
+    ))
+}
+
+/// Pull `ratsa.lab.json` (the Agent/cloud contract for this lab).
+pub fn lab_spec(client: &Client, slug: &str, out_dir: &str) -> Result<String, String> {
+    let (bytes, headers) = client.download(&format!("/api/v1/labs/{slug}/spec"))?;
+    verify_checksum(&bytes, &headers)?;
+    let dir = if out_dir.is_empty() {
+        default_lab_dir()
+    } else {
+        PathBuf::from(out_dir)
+    };
+    std::fs::create_dir_all(&dir).map_err(|e| format!("无法创建 {}: {e}", dir.display()))?;
+    let file = dir.join(headers.filename("ratsa.lab.json"));
+    std::fs::write(&file, &bytes).map_err(|e| format!("写入 {} 失败：{e}", file.display()))?;
+    let mut out = format!("已保存 {}", file.display());
+    if !headers.checksum.is_empty() {
+        out.push_str(&format!("\nsha256 校验通过：{}", headers.checksum));
+    }
+    out.push('\n');
+    Ok(out)
+}
+
+fn default_lab_dir() -> PathBuf {
+    match std::env::var("HOME") {
+        Ok(h) if !h.is_empty() => PathBuf::from(h).join(".ratsa").join("lab"),
+        _ => PathBuf::from(".ratsa/lab"),
+    }
+}
+
+pub fn lab_services(client: &Client, slug: &str, json_out: bool) -> Result<String, String> {
+    let v = lab_ok(client.get(&format!("/api/v1/labs/{slug}/services"))?)?;
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+    }
+    let items = v
+        .get("items")
+        .and_then(|x| x.as_array())
+        .cloned()
+        .unwrap_or_default();
+    if items.is_empty() {
+        return Ok("该 Lab 还没有发布服务（Lab 通过审核后可新增）。\n".into());
+    }
+    let mut out = String::from("id  类别        周期  Agent  名称\n");
+    for s in items {
+        out.push_str(&format!(
+            "{:<3} {:<11} {:<5} {:<6} {}\n",
+            s.get("id").and_then(|x| x.as_u64()).unwrap_or(0),
+            lab_field(&s, "category"),
+            s.get("turnaround_days")
+                .and_then(|x| x.as_u64())
+                .unwrap_or(0),
+            if s.get("agent_callable")
+                .and_then(|x| x.as_bool())
+                .unwrap_or(false)
+            {
+                "yes"
+            } else {
+                "no"
+            },
+            lab_field(&s, "name"),
+        ));
+    }
+    Ok(out)
+}
+
+pub fn lab_service_add(
+    client: &Client,
+    slug: &str,
+    file: &str,
+    json_out: bool,
+) -> Result<String, String> {
+    let body = read_json_file(file)?;
+    let v = lab_ok(client.post(&format!("/api/v1/labs/{slug}/services"), &body)?)?;
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+    }
+    let s = v.get("service").cloned().unwrap_or(Value::Null);
+    Ok(format!(
+        "已新增服务：{}（id={}）\n",
+        lab_field(&s, "name"),
+        s.get("id").and_then(|x| x.as_u64()).unwrap_or(0)
+    ))
+}
+
+pub fn lab_service_delete(client: &Client, slug: &str, id: u64) -> Result<String, String> {
+    lab_ok(client.delete(&format!("/api/v1/labs/{slug}/services/{id}"))?)?;
+    Ok(format!("已删除服务 {id}\n"))
+}
+
+pub fn lab_records(client: &Client, slug: &str, json_out: bool) -> Result<String, String> {
+    let v = lab_ok(client.get(&format!("/api/v1/labs/{slug}/records"))?)?;
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+    }
+    let items = v
+        .get("items")
+        .and_then(|x| x.as_array())
+        .cloned()
+        .unwrap_or_default();
+    if items.is_empty() {
+        return Ok("该 Lab 还没有过往服务记录。\n".into());
+    }
+    let mut out = String::from("id  完成时间    客户              标题\n");
+    for r in items {
+        out.push_str(&format!(
+            "{:<3} {:<11} {:<16} {}\n",
+            r.get("id").and_then(|x| x.as_u64()).unwrap_or(0),
+            lab_field(&r, "completed_at").get(..10).unwrap_or("-"),
+            truncate_cells(lab_field(&r, "client"), 16),
+            lab_field(&r, "title"),
+        ));
+    }
+    Ok(out)
+}
+
+pub fn lab_record_add(
+    client: &Client,
+    slug: &str,
+    file: &str,
+    json_out: bool,
+) -> Result<String, String> {
+    let body = read_json_file(file)?;
+    let v = lab_ok(client.post(&format!("/api/v1/labs/{slug}/records"), &body)?)?;
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+    }
+    let r = v.get("record").cloned().unwrap_or(Value::Null);
+    Ok(format!(
+        "已新增服务记录：{}（id={}）\n",
+        lab_field(&r, "title"),
+        r.get("id").and_then(|x| x.as_u64()).unwrap_or(0)
+    ))
+}
+
+pub fn lab_record_delete(client: &Client, slug: &str, id: u64) -> Result<String, String> {
+    lab_ok(client.delete(&format!("/api/v1/labs/{slug}/records/{id}"))?)?;
+    Ok(format!("已删除服务记录 {id}\n"))
+}
+
+fn device_status_text(status: &str) -> &str {
+    match status {
+        "active" => "在用",
+        "idle" => "空闲",
+        "maintenance" => "维护中",
+        "offline" => "停用",
+        _ => status,
+    }
+}
+
+/// List the RATSA devices bound to a lab, with their lab-side status.
+pub fn lab_devices(client: &Client, slug: &str, json_out: bool) -> Result<String, String> {
+    let v = lab_ok(client.get(&format!("/api/v1/labs/{slug}/devices"))?)?;
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+    }
+    let items = v
+        .get("items")
+        .and_then(|x| x.as_array())
+        .cloned()
+        .unwrap_or_default();
+    if items.is_empty() {
+        return Ok("该 Lab 还没有绑定设备。用 `ratsa lab device add <lab> <sof-slug>` 添加。\n".into());
+    }
+    let mut out = format!(
+        "id  {} {} {} {}\n",
+        pad_cells("状态", 8),
+        pad_cells("设备", 28),
+        pad_cells("厂商", 16),
+        "最近确认"
+    );
+    for d in items {
+        out.push_str(&format!(
+            "{} {} {} {} {}\n",
+            pad_cells(&d.get("id").and_then(|x| x.as_u64()).unwrap_or(0).to_string(), 3),
+            pad_cells(device_status_text(lab_field(&d, "status")), 8),
+            pad_cells(&truncate_cells(lab_field(&d, "name"), 28), 28),
+            pad_cells(&truncate_cells(lab_field(&d, "vendor_name"), 16), 16),
+            lab_field(&d, "last_checked_at").get(..10).unwrap_or("-"),
+        ));
+    }
+    Ok(out)
+}
+
+/// List device vendors / devices from the RATSA.ai catalog (public + own).
+pub fn lab_vendors(client: &Client, query: &str, json_out: bool) -> Result<String, String> {
+    let path = if query.is_empty() {
+        "/api/v1/lab/catalog?limit=20".to_string()
+    } else {
+        format!("/api/v1/lab/catalog?limit=20&q={}", urlencode(query))
+    };
+    let v = lab_ok(client.get(&path)?)?;
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+    }
+    let vendors = v
+        .get("vendors")
+        .and_then(|x| x.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let mut out = format!(
+        "{} {} {} {}\n",
+        pad_cells("厂商 slug", 12),
+        pad_cells("设备数", 8),
+        pad_cells("认证", 6),
+        "名称"
+    );
+    for x in &vendors {
+        out.push_str(&format!(
+            "{} {} {} {}\n",
+            pad_cells(lab_field(x, "slug"), 12),
+            pad_cells(&x.get("devices").and_then(|d| d.as_u64()).unwrap_or(0).to_string(), 8),
+            pad_cells(if x.get("verified").and_then(|b| b.as_bool()).unwrap_or(false) { "yes" } else { "no" }, 6),
+            lab_field(x, "name"),
+        ));
+    }
+    let items = v
+        .get("items")
+        .and_then(|x| x.as_array())
+        .cloned()
+        .unwrap_or_default();
+    if !items.is_empty() {
+        out.push('\n');
+        out.push_str(&format!(
+            "{} {} {} {}\n",
+            pad_cells("设备 slug", 12),
+            pad_cells("类目", 12),
+            pad_cells("厂商", 16),
+            "名称"
+        ));
+        for it in items {
+            let vendor = it.get("vendor").cloned().unwrap_or(Value::Null);
+            out.push_str(&format!(
+                "{} {} {} {}\n",
+                pad_cells(lab_field(&it, "slug"), 12),
+                pad_cells(&truncate_cells(lab_field(&it, "category"), 12), 12),
+                pad_cells(&truncate_cells(lab_field(&vendor, "name"), 16), 16),
+                lab_field(&it, "name"),
+            ));
+        }
+    }
+    out.push_str("\n下一步：ratsa lab device add <lab-slug> <sof-slug>\n");
+    Ok(out)
+}
+
+/// Bind a RATSA device to the lab (the lab maintains status afterwards).
+#[allow(clippy::too_many_arguments)]
+pub fn lab_device_add(
+    client: &Client,
+    slug: &str,
+    sof: &str,
+    model: &str,
+    note: &str,
+    status: &str,
+    json_out: bool,
+) -> Result<String, String> {
+    let body = json!({
+        "sof_slug": sof,
+        "model": model,
+        "note": note,
+        "status": if status.is_empty() { "active" } else { status },
+    });
+    let v = lab_ok(client.post(&format!("/api/v1/labs/{slug}/devices"), &body)?)?;
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+    }
+    let d = v.get("device").cloned().unwrap_or(Value::Null);
+    Ok(format!(
+        "已绑定设备：{}（id={}，厂商 {}）\n",
+        lab_field(&d, "name"),
+        d.get("id").and_then(|x| x.as_u64()).unwrap_or(0),
+        lab_field(&d, "vendor_name"),
+    ))
+}
+
+/// Update the lab-side status / note of a bound device.
+pub fn lab_device_status(
+    client: &Client,
+    slug: &str,
+    id: u64,
+    status: &str,
+    note: Option<&str>,
+) -> Result<String, String> {
+    let mut body = json!({ "status": status });
+    if let Some(n) = note {
+        body["note"] = json!(n);
+    }
+    let v = lab_ok(client.put(&format!("/api/v1/labs/{slug}/devices/{id}"), &body)?)?;
+    let d = v.get("device").cloned().unwrap_or(Value::Null);
+    Ok(format!(
+        "已更新设备 {}：{}（{}）\n",
+        d.get("id").and_then(|x| x.as_u64()).unwrap_or(id),
+        device_status_text(lab_field(&d, "status")),
+        lab_field(&d, "name"),
+    ))
+}
+
+pub fn lab_device_remove(client: &Client, slug: &str, id: u64) -> Result<String, String> {
+    lab_ok(client.delete(&format!("/api/v1/labs/{slug}/devices/{id}"))?)?;
+    Ok(format!("已从 Lab 解绑设备 {id}\n"))
+}
+
+fn feedback_status_text(status: &str) -> &str {
+    match status {
+        "recorded" => "已登记",
+        "verified" => "已核验",
+        "disputed" => "有争议",
+        _ => status,
+    }
+}
+
+/// List the lab's customer transaction records plus the qualification summary.
+pub fn lab_feedback(client: &Client, slug: &str, json_out: bool) -> Result<String, String> {
+    let v = lab_ok(client.get(&format!("/api/v1/labs/{slug}/feedback"))?)?;
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+    }
+    let items = v
+        .get("items")
+        .and_then(|x| x.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let mut out = String::new();
+    if let Some(sm) = v.get("summary") {
+        let num = |k: &str| sm.get(k).and_then(|x| x.as_f64()).unwrap_or(0.0);
+        out.push_str(&format!(
+            "交易 {}, 已核验 {}, 平均评分 {}, 可展示 {}, 资质: {}\n\n",
+            num("total") as i64,
+            num("verified") as i64,
+            num("avg_rating"),
+            num("consented") as i64,
+            if sm.get("qualification_ready").and_then(|b| b.as_bool()).unwrap_or(false) {
+                "达到参考门槛"
+            } else {
+                "未达参考门槛"
+            },
+        ));
+    }
+    if items.is_empty() {
+        out.push_str("还没有登记服务交易。用 `ratsa lab feedback-add` 登记。\n");
+        return Ok(out);
+    }
+    out.push_str(&format!(
+        "id  {} {} {} {} {} {}\n",
+        pad_cells("日期", 12),
+        pad_cells("客户", 20),
+        pad_cells("服务", 18),
+        pad_cells("评分", 5),
+        pad_cells("状态", 8),
+        "公开"
+    ));
+    for f in items {
+        let customer = if !lab_field(&f, "customer_company").is_empty() {
+            lab_field(&f, "customer_company")
+        } else {
+            lab_field(&f, "customer_name")
+        };
+        let date = lab_field(&f, "occurred_at");
+        let date = date.get(..10).unwrap_or("-");
+        out.push_str(&format!(
+            "{} {} {} {} {} {} {}\n",
+            pad_cells(&f.get("id").and_then(|x| x.as_u64()).unwrap_or(0).to_string(), 3),
+            pad_cells(date, 12),
+            pad_cells(&truncate_cells(customer, 20), 20),
+            pad_cells(&truncate_cells(lab_field(&f, "service_name"), 18), 18),
+            pad_cells(&f.get("rating").and_then(|x| x.as_u64()).unwrap_or(0).to_string(), 5),
+            pad_cells(feedback_status_text(lab_field(&f, "status")), 8),
+            if f.get("consent").and_then(|b| b.as_bool()).unwrap_or(false) { "yes" } else { "no" },
+        ));
+    }
+    Ok(out)
+}
+
+/// Register one customer transaction (the lab's key writes it).
+#[allow(clippy::too_many_arguments)]
+pub fn lab_feedback_add(
+    client: &Client,
+    slug: &str,
+    customer: &str,
+    company: &str,
+    contact: &str,
+    service_id: Option<u64>,
+    order_ref: &str,
+    amount: f64,
+    currency: &str,
+    rating: u8,
+    category: &str,
+    title: &str,
+    detail: &str,
+    date: &str,
+    consent: bool,
+    json_out: bool,
+) -> Result<String, String> {
+    let mut body = json!({
+        "customer_name": customer,
+        "customer_company": company,
+        "customer_contact": contact,
+        "order_ref": order_ref,
+        "amount": amount,
+        "currency": if currency.is_empty() { "CNY" } else { currency },
+        "rating": rating,
+        "category": if category.is_empty() { "other" } else { category },
+        "title": title,
+        "detail": detail,
+        "consent": consent,
+    });
+    if let Some(id) = service_id {
+        body["service_id"] = json!(id);
+    }
+    if !date.is_empty() {
+        body["occurred_at"] = json!(date);
+    }
+    let v = lab_ok(client.post(&format!("/api/v1/labs/{slug}/feedback"), &body)?)?;
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+    }
+    let f = v.get("feedback").cloned().unwrap_or(Value::Null);
+    Ok(format!(
+        "已登记交易 #{}：{} / {}（评分 {}）\n",
+        f.get("id").and_then(|x| x.as_u64()).unwrap_or(0),
+        lab_field(&f, "customer_company"),
+        lab_field(&f, "service_name"),
+        f.get("rating").and_then(|x| x.as_u64()).unwrap_or(0),
+    ))
+}
+
+/// Qualification / marketing roll-up for the lab.
+pub fn lab_feedback_summary(client: &Client, slug: &str, json_out: bool) -> Result<String, String> {
+    let v = lab_ok(client.get(&format!("/api/v1/labs/{slug}/feedback/summary"))?)?;
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+    }
+    let sm = v.get("summary").cloned().unwrap_or(Value::Null);
+    let num = |k: &str| sm.get(k).and_then(|x| x.as_f64()).unwrap_or(0.0);
+    let mut out = format!(
+        "交易数      : {}\n已核验      : {}\n有争议      : {}\n平均评分    : {}\n可展示案例  : {}\n资质参考    : {}\n",
+        num("total") as i64,
+        num("verified") as i64,
+        num("disputed") as i64,
+        num("avg_rating"),
+        num("consented") as i64,
+        if sm.get("qualification_ready").and_then(|b| b.as_bool()).unwrap_or(false) {
+            "达到参考门槛"
+        } else {
+            "未达参考门槛"
+        },
+    );
+    let testimonials = v
+        .get("testimonials")
+        .and_then(|x| x.as_array())
+        .cloned()
+        .unwrap_or_default();
+    if !testimonials.is_empty() {
+        out.push_str("\n可展示案例：\n");
+        for t in testimonials {
+            out.push_str(&format!(
+                "  - {}（{}）{} 分 {}\n",
+                lab_field(&t, "customer_company"),
+                lab_field(&t, "service_name"),
+                t.get("rating").and_then(|x| x.as_u64()).unwrap_or(0),
+                lab_field(&t, "title"),
+            ));
+        }
+    }
+    Ok(out)
+}
+
+pub fn lab_feedback_delete(client: &Client, slug: &str, id: u64) -> Result<String, String> {
+    lab_ok(client.delete(&format!("/api/v1/labs/{slug}/feedback/{id}"))?)?;
+    Ok(format!("已删除交易记录 {id}\n"))
+}
+
+/// Minimal percent-encoding for query values (space, &, #, non-ASCII).
+fn urlencode(raw: &str) -> String {
+    let mut out = String::new();
+    for b in raw.as_bytes() {
+        match *b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(*b as char)
+            }
+            b' ' => out.push_str("%20"),
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
+
 // ------------------------------------------------------------------ helpers
 
 fn short(s: &str) -> String {
@@ -1322,6 +2056,20 @@ fn truncate_cells(s: &str, max_cells: usize) -> String {
         }
         cells += w;
         out.push(ch);
+    }
+    out
+}
+
+/// Pad to a display-cell width (CJK counts as 2) so mixed-language tables line up.
+fn pad_cells(s: &str, width: usize) -> String {
+    let mut cells = 0;
+    for ch in s.chars() {
+        cells += if (ch as u32) > 0x2E80 { 2 } else { 1 };
+    }
+    let mut out = s.to_string();
+    while cells < width {
+        out.push(' ');
+        cells += 1;
     }
     out
 }

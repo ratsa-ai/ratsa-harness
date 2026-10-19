@@ -24,6 +24,12 @@ npx @ratsa/cli package <slug> --meta   # 平台官方生成设备 Harness 包（
 npx @ratsa/cli package <slug>          # 下载（自动校验 sha256）
 npx @ratsa/cli sof-file <slug>         # 拉取 SOF 文件（可回灌）
 npx @ratsa/cli report <slug> --score 88 --passed 22 --failed 2
+
+# 4. RATSA Lab（Cloud Lab，完全私有；任何登录账号可自助创建）
+npx @ratsa/cli lab list
+npx @ratsa/cli lab upload <slug> ./license.pdf --kind license
+npx @ratsa/cli lab apply ./lab.json --submit --note "首次申请"
+npx @ratsa/cli lab spec <slug>          # ratsa.lab.json（Agent / 云接入契约）
 ```
 
 ## 为什么是 CLI + 插件，而不是又一个 SDK

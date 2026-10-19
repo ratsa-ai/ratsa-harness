@@ -47,3 +47,30 @@
 | `device-harness` | 平台按 SOF 派生的设备 Harness 包（`sof.json`、`ratsa.harness.json`、`harness/harness.py`、`manifest.json`） | `pull <slug> --kind device` |
 | `eval-repo` | 可本地运行的评测仓库 | `pull <slug> --kind eval-repo` |
 | `service-harness` | 评测服务商提供的测试包 | `pull <slug> --kind service` |
+
+## RATSA Lab（Cloud Lab，完全私有）
+
+任何登录账号都可自助创建 Lab 并自选领域，审核由平台运营把关；没有公开列表。权限：`lab:read` / `lab:write`。
+
+```bash
+{{BIN}} lab list
+{{BIN}} lab get <slug>
+{{BIN}} lab upload <slug> <file> --kind license|certificate|sop|equipment|other
+{{BIN}} lab apply <profile.json> --submit --note "…"
+{{BIN}} lab spec <slug>          # ratsa.lab.json（Agent / 云接入契约）
+{{BIN}} lab services <slug>
+{{BIN}} lab records <slug>
+{{BIN}} lab status <slug>
+{{BIN}} lab delete <slug>
+# 设备（厂商设备来自 RATSA AI 目录）
+{{BIN}} lab vendors [关键字]
+{{BIN}} lab devices <slug>
+{{BIN}} lab device-add <slug> <sof-slug>
+{{BIN}} lab device-status <slug> <id> active|idle|maintenance|offline
+{{BIN}} lab device-remove <slug> <id>
+{{BIN}} lab feedback <slug>
+{{BIN}} lab feedback-add <slug> --company "客户公司" --rating 5 [--consent]
+{{BIN}} lab feedback-summary <slug>
+```
+
+404 = 不是本账号的 Lab（完全私有）；审核中不可删除。

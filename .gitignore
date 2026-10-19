@@ -5,3 +5,12 @@
 npm-debug.log*
 *.bak
 .DS_Store
+
+# `ratsa install` output (contains machine-specific absolute paths; regenerate locally)
+/.claude/
+/.cursor/
+/.github/copilot-instructions.md
+/.github/skills/
+/.mcp.json
+/.vscode/
+/AGENTS.md

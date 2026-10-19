@@ -128,6 +128,58 @@ impl Client {
         self.send(self.agent.post(&url), Some(body))
     }
 
+    /// POST a single-file multipart form. Used by RATSA Lab materials (the
+    /// platform stores them as-is); unlike Harness packages there is no
+    /// checksum to verify because the file is never executed.
+    pub fn post_multipart(
+        &self,
+        path: &str,
+        field: &str,
+        filename: &str,
+        content_type: &str,
+        extra: &[(&str, &str)],
+        data: &[u8],
+    ) -> Result<Response, String> {
+        let url = format!("{}{}", self.base, path);
+        let boundary = format!(
+            "----ratsa{:x}{:x}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        );
+        let safe_name = filename.replace(['"', '\r', '\n'], "_");
+        let mut body = Vec::new();
+        for (k, v) in extra {
+            body.extend_from_slice(
+                format!(
+                    "--{boundary}\r\nContent-Disposition: form-data; name=\"{k}\"\r\n\r\n{v}\r\n"
+                )
+                .as_bytes(),
+            );
+        }
+        body.extend_from_slice(
+            format!(
+                "--{boundary}\r\nContent-Disposition: form-data; name=\"{field}\"; filename=\"{safe_name}\"\r\nContent-Type: {content_type}\r\n\r\n"
+            )
+            .as_bytes(),
+        );
+        body.extend_from_slice(data);
+        body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+
+        let req = self
+            .decorate(self.agent.post(&url))
+            .set("Content-Type", &format!("multipart/form-data; boundary={boundary}"));
+        match req.send_bytes(&body) {
+            Ok(resp) => read(resp),
+            Err(ureq::Error::Status(_, resp)) => read(resp),
+            Err(ureq::Error::Transport(t)) => {
+                Err(format!("网络错误：{t}（base_url={}）", self.base))
+            }
+        }
+    }
+
     /// PUT 一个 JSON body。更新类端点（如 `PUT /api/v1/sof/{slug}`）用。
     pub fn put(&self, path: &str, body: &Value) -> Result<Response, String> {
         let url = format!("{}{}", self.base, path);

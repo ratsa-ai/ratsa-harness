@@ -24,6 +24,12 @@ npx @ratsa/cli package <slug> --meta   # platform-generated device Harness packa
 npx @ratsa/cli package <slug>          # download (sha256 verified)
 npx @ratsa/cli sof-file <slug>         # fetch the SOF file (can be posted back)
 npx @ratsa/cli report <slug> --score 88 --passed 22 --failed 2
+
+# 4) RATSA Lab (Cloud Lab, fully private; any signed-in account can create one)
+npx @ratsa/cli lab list
+npx @ratsa/cli lab upload <slug> ./license.pdf --kind license
+npx @ratsa/cli lab apply ./lab.json --submit --note "first application"
+npx @ratsa/cli lab spec <slug>          # ratsa.lab.json (Agent / cloud contract)
 ```
 
 ## Why a CLI + plugin instead of yet another SDK

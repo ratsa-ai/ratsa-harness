@@ -108,3 +108,32 @@ unzip -o ~/.ratsa/packages/<slug>/device/*.zip -d ~/.ratsa/packages/<slug>/devic
 若宿主把 RATSA 注册成了 MCP server（`{{BIN}} mcp`），直接用这些工具，不必拼命令行：
 
 `ratsa_whoami` · `ratsa_scopes` · `ratsa_search_sofs` · `ratsa_read_sof` · `ratsa_device_harness` · `ratsa_list_packages` · `ratsa_pull_package` · `ratsa_report_run` · `ratsa_submit_feedback`
+
+## RATSA Lab（Cloud Lab，完全私有）
+
+任何登录账号都可自助创建 Lab 并自选领域（bio / chem / env / materials），审核由平台运营把关；没有公开列表，只能管理本账号（或 key 绑定账号）名下的 Lab。权限：`lab:read` / `lab:write`。
+
+```bash
+{{BIN}} lab list
+{{BIN}} lab get <slug>
+{{BIN}} lab upload <slug> <file> --kind license|certificate|sop|equipment|other
+{{BIN}} lab apply <profile.json> --submit --note "…"
+{{BIN}} lab spec <slug>           # 拉取 ratsa.lab.json（Agent / 云接入契约，sha256 校验）
+{{BIN}} lab services <slug>
+{{BIN}} lab records <slug>
+{{BIN}} lab status <slug>
+{{BIN}} lab delete <slug>
+{{BIN}} lab vendors [关键字]          # RATSA AI 上的设备厂商 / 设备
+{{BIN}} lab devices <slug>            # 已绑定设备 + 运行状态
+{{BIN}} lab device-add <slug> <sof-slug> [--model …] [--note …]
+{{BIN}} lab device-status <slug> <id> active|idle|maintenance|offline [--note …]
+{{BIN}} lab device-remove <slug> <id>
+{{BIN}} lab feedback <slug>            # 客户交易反馈 + 资质汇总
+{{BIN}} lab feedback-add <slug> --company "客户公司" --rating 5 [--order-ref …] [--consent]
+{{BIN}} lab feedback-summary <slug>
+```
+
+- Lab 404 = 不是本账号的 Lab；不要猜 slug。
+- 提交审核前至少上传一份资料。
+
+MCP 工具：`ratsa_list_labs` · `ratsa_read_lab` · `ratsa_apply_lab` · `ratsa_upload_lab_document` · `ratsa_delete_lab` · `ratsa_list_lab_services` · `ratsa_list_lab_records` · `ratsa_list_lab_devices` · `ratsa_add_lab_device` · `ratsa_update_lab_device` · `ratsa_list_lab_vendors` · `ratsa_list_lab_feedback` · `ratsa_add_lab_feedback` · `ratsa_lab_feedback_summary` · `ratsa_read_lab_spec`

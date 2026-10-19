@@ -226,6 +226,14 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// RATSA Lab（Cloud Lab / 湿实验室）：创建、资料、服务、过往服务与 Spec
+    ///
+    /// Lab 完全私有：没有公开列表，只能管理本账号（或 key 绑定账号）名下的 Lab。
+    /// 任何登录账号都可自助创建并自选领域（bio / chem / env / materials）。
+    Lab {
+        #[command(subcommand)]
+        action: LabAction,
+    },
     /// 以 MCP stdio 服务器方式运行（供 Agent 作为工具调用）
     Mcp,
     /// 从发布通道更新 `ratsa` 自身
@@ -331,6 +339,231 @@ enum ConfigAction {
     },
     /// 清除本地 API key（保留会话）
     Clear,
+}
+
+#[derive(Subcommand, Debug)]
+enum LabAction {
+    /// 列出本账号（或 key 绑定账号）名下的 Lab；没有公开列表
+    List {
+        #[arg(long)]
+        json: bool,
+    },
+    /// 读取一个 Lab（档案 + 服务 + 过往服务 + 资料 + 申请记录）
+    Get {
+        /// Lab 的 slug
+        slug: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// 用 JSON 文件创建 / 更新 Lab 档案；--submit 同时提交审核
+    Apply {
+        /// 档案 JSON（字段同 POST /api/lab）
+        file: String,
+        /// 同时提交审核（需先 upload 资料）
+        #[arg(long)]
+        submit: bool,
+        /// 申请备注（配合 --submit）
+        #[arg(long, default_value = "")]
+        note: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// 查看申请 / 审核状态
+    Status {
+        /// Lab 的 slug
+        slug: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// 删除本账号的 Lab（连同资料、服务与过往服务记录；审核中不可删除）
+    Delete {
+        /// Lab 的 slug
+        slug: String,
+    },
+    /// 列出 Lab 绑定的 RATSA 设备与运行状态
+    Devices {
+        /// Lab 的 slug
+        slug: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// 从 RATSA AI 目录列出设备厂商与可绑定设备
+    Vendors {
+        /// 关键字（设备名 / 厂商 / 类目）
+        q: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// 绑定一台 RATSA 设备到 Lab（设备来自 RATSA AI 目录）
+    DeviceAdd {
+        /// Lab 的 slug
+        slug: String,
+        /// 设备的 SOF slug
+        sof: String,
+        /// 型号 / 编号
+        #[arg(long, default_value = "")]
+        model: String,
+        /// 备注
+        #[arg(long, default_value = "")]
+        note: String,
+        /// active | idle | maintenance | offline
+        #[arg(long, default_value = "active")]
+        status: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// 维护设备状态（active | idle | maintenance | offline）
+    DeviceStatus {
+        /// Lab 的 slug
+        slug: String,
+        /// 设备 id
+        id: u64,
+        /// active | idle | maintenance | offline
+        status: String,
+        /// 顺便更新备注
+        #[arg(long)]
+        note: Option<String>,
+    },
+    /// 从 Lab 解绑设备（不删除厂商的 SOF）
+    DeviceRemove {
+        /// Lab 的 slug
+        slug: String,
+        /// 设备 id
+        id: u64,
+    },
+    /// 列出客户服务交易反馈（含资质汇总）
+    Feedback {
+        /// Lab 的 slug
+        slug: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// 用实验室账号登记一笔客户交易（平台核验后作为资质 / 营销证据）
+    FeedbackAdd {
+        /// Lab 的 slug
+        slug: String,
+        /// 客户联系人
+        #[arg(long, default_value = "")]
+        customer: String,
+        /// 客户公司
+        #[arg(long, default_value = "")]
+        company: String,
+        /// 客户联系方式
+        #[arg(long, default_value = "")]
+        contact: String,
+        /// 关联的 Lab 服务 id（可选）
+        #[arg(long)]
+        service: Option<u64>,
+        /// 订单 / 合同号
+        #[arg(long = "order-ref", default_value = "")]
+        order_ref: String,
+        /// 金额
+        #[arg(long, default_value_t = 0.0)]
+        amount: f64,
+        /// 币种（默认 CNY）
+        #[arg(long, default_value = "CNY")]
+        currency: String,
+        /// 评分 0-5（0 = 暂不评分）
+        #[arg(long, default_value_t = 0)]
+        rating: u8,
+        /// quality | turnaround | support | other
+        #[arg(long, default_value = "other")]
+        category: String,
+        /// 一句话结论
+        #[arg(long, default_value = "")]
+        title: String,
+        /// 详情
+        #[arg(long, default_value = "")]
+        detail: String,
+        /// 交易日期 YYYY-MM-DD（默认为当天）
+        #[arg(long, default_value = "")]
+        date: String,
+        /// 客户已同意作为公开案例 / 营销素材
+        #[arg(long)]
+        consent: bool,
+        #[arg(long)]
+        json: bool,
+    },
+    /// 资质 / 营销汇总（交易数、平均评分、可展示案例）
+    FeedbackSummary {
+        /// Lab 的 slug
+        slug: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// 删除一条交易反馈
+    FeedbackDelete {
+        /// Lab 的 slug
+        slug: String,
+        /// 反馈 id
+        id: u64,
+    },
+    /// 上传资质 / 证书 / SOP / 设备清单等资料（单文件 ≤ 25MB）
+    Upload {
+        /// Lab 的 slug
+        slug: String,
+        /// 本地文件
+        file: String,
+        /// license | certificate | sop | equipment | other
+        #[arg(long, default_value = "other")]
+        kind: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// 拉取 ratsa.lab.json（Agent / 云接入契约，带 sha256 校验）
+    Spec {
+        /// Lab 的 slug
+        slug: String,
+        /// 落盘目录（默认 ~/.ratsa/lab）
+        #[arg(long)]
+        out: Option<String>,
+    },
+    /// 列出可提供的服务
+    Services {
+        /// Lab 的 slug
+        slug: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// 新增服务（JSON 文件）
+    ServiceAdd {
+        /// Lab 的 slug
+        slug: String,
+        /// 服务 JSON（字段同 POST /api/lab/services）
+        file: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// 删除服务
+    ServiceDelete {
+        /// Lab 的 slug
+        slug: String,
+        /// 服务 id
+        id: u64,
+    },
+    /// 列出过往服务内容
+    Records {
+        /// Lab 的 slug
+        slug: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// 新增过往服务记录（JSON 文件）
+    RecordAdd {
+        /// Lab 的 slug
+        slug: String,
+        /// 记录 JSON（字段同 POST /api/lab/records）
+        file: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// 删除过往服务记录
+    RecordDelete {
+        /// Lab 的 slug
+        slug: String,
+        /// 记录 id
+        id: u64,
+    },
 }
 
 fn main() {
@@ -472,6 +705,95 @@ fn main() {
                 Some(d) => commands::kb_read(&client, &sof, &tfilter, &d, &out).map(|s| print!("{s}")),
                 None => commands::kb_index(&client, &sof, &tfilter, json).map(|s| print!("{s}")),
             }
+        }
+        Command::Lab { action } => {
+            let client = api::Client::new(&cfg);
+            let result = match action {
+                LabAction::List { json } => commands::lab_list(&client, json),
+                LabAction::Get { slug, json } => commands::lab_get(&client, &slug, json),
+                LabAction::Apply {
+                    file,
+                    submit,
+                    note,
+                    json,
+                } => commands::lab_apply(&client, &file, submit, &note, json),
+                LabAction::Status { slug, json } => commands::lab_status(&client, &slug, json),
+                LabAction::Delete { slug } => commands::lab_delete(&client, &slug),
+                LabAction::Devices { slug, json } => commands::lab_devices(&client, &slug, json),
+                LabAction::Vendors { q, json } => {
+                    commands::lab_vendors(&client, &q.unwrap_or_default(), json)
+                }
+                LabAction::DeviceAdd {
+                    slug,
+                    sof,
+                    model,
+                    note,
+                    status,
+                    json,
+                } => commands::lab_device_add(&client, &slug, &sof, &model, &note, &status, json),
+                LabAction::DeviceStatus {
+                    slug,
+                    id,
+                    status,
+                    note,
+                } => commands::lab_device_status(&client, &slug, id, &status, note.as_deref()),
+                LabAction::DeviceRemove { slug, id } => {
+                    commands::lab_device_remove(&client, &slug, id)
+                }
+                LabAction::Feedback { slug, json } => {
+                    commands::lab_feedback(&client, &slug, json)
+                }
+                LabAction::FeedbackAdd {
+                    slug,
+                    customer,
+                    company,
+                    contact,
+                    service,
+                    order_ref,
+                    amount,
+                    currency,
+                    rating,
+                    category,
+                    title,
+                    detail,
+                    date,
+                    consent,
+                    json,
+                } => commands::lab_feedback_add(
+                    &client, &slug, &customer, &company, &contact, service, &order_ref,
+                    amount, &currency, rating, &category, &title, &detail, &date, consent, json,
+                ),
+                LabAction::FeedbackSummary { slug, json } => {
+                    commands::lab_feedback_summary(&client, &slug, json)
+                }
+                LabAction::FeedbackDelete { slug, id } => {
+                    commands::lab_feedback_delete(&client, &slug, id)
+                }
+                LabAction::Upload {
+                    slug,
+                    file,
+                    kind,
+                    json,
+                } => commands::lab_upload(&client, &slug, &file, &kind, json),
+                LabAction::Spec { slug, out } => {
+                    commands::lab_spec(&client, &slug, &out.unwrap_or_default())
+                }
+                LabAction::Services { slug, json } => commands::lab_services(&client, &slug, json),
+                LabAction::ServiceAdd { slug, file, json } => {
+                    commands::lab_service_add(&client, &slug, &file, json)
+                }
+                LabAction::ServiceDelete { slug, id } => {
+                    commands::lab_service_delete(&client, &slug, id)
+                }
+                LabAction::Records { slug, json } => commands::lab_records(&client, &slug, json),
+                LabAction::RecordAdd { slug, file, json } => {
+                    commands::lab_record_add(&client, &slug, &file, json)
+                }
+                LabAction::RecordDelete { slug, id } => {
+                    commands::lab_record_delete(&client, &slug, id)
+                }
+            };
+            result.map(|s| print!("{s}"))
         }
         Command::Mcp => mcp::serve(),
         Command::Upgrade => upgrade::run(),

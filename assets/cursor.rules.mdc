@@ -51,3 +51,27 @@ alwaysApply: true
 ```bash
 {{BIN}} keys create --name <用途> --scopes <scope 列表> --bound-slug <handle> --use
 ```
+
+## RATSA Lab（Cloud Lab，完全私有）
+
+任何登录账号都可自助创建 Lab 并自选领域，审核由平台运营把关；没有公开列表。权限：`lab:read` / `lab:write`。
+
+```bash
+{{BIN}} lab list
+{{BIN}} lab get <slug>
+{{BIN}} lab upload <slug> <file> --kind license|certificate|sop|equipment|other
+{{BIN}} lab apply <profile.json> --submit --note "…"
+{{BIN}} lab spec <slug>
+{{BIN}} lab services <slug>
+{{BIN}} lab records <slug>
+{{BIN}} lab status <slug>
+{{BIN}} lab delete <slug>
+{{BIN}} lab vendors [关键字]
+{{BIN}} lab devices <slug>
+{{BIN}} lab device-add <slug> <sof-slug>
+{{BIN}} lab device-status <slug> <id> active|idle|maintenance|offline
+{{BIN}} lab device-remove <slug> <id>
+{{BIN}} lab feedback <slug>
+{{BIN}} lab feedback-add <slug> --company "客户公司" --rating 5 [--consent]
+{{BIN}} lab feedback-summary <slug>
+```

@@ -49,3 +49,34 @@
 6. 有问题 → `feedback` 反馈厂商
 
 静态就绪度（平台按 SOF 声明派生）与实测结果（你回传的）在平台上是**分开**展示的两条线。
+
+## RATSA Lab（Cloud Lab，完全私有）
+
+任何登录账号都可**自助创建** Lab 并自选领域（bio / chem / env / materials），审核由平台运营把关；没有公开列表，只能访问本账号（或 key 绑定账号）名下的 Lab。需要的权限：`lab:read` / `lab:write`。
+
+```bash
+{{BIN}} lab list                                  # 我的 Lab（无公开列表）
+{{BIN}} lab get <slug>                            # 档案 + 服务 + 过往服务 + 资料
+{{BIN}} lab upload <slug> <file> --kind license|certificate|sop|equipment|other
+{{BIN}} lab apply <profile.json> --submit --note "…"
+{{BIN}} lab status <slug>
+{{BIN}} lab delete <slug>
+{{BIN}} lab spec <slug>                           # ratsa.lab.json（Agent / 云接入契约，sha256 校验）
+{{BIN}} lab services <slug>
+{{BIN}} lab records <slug>
+# 设备：从 RATSA AI 目录绑定厂商设备，并维护运行状态
+{{BIN}} lab vendors [关键字]                      # 平台上的设备厂商 / 设备
+{{BIN}} lab devices <slug>
+{{BIN}} lab device-add <slug> <sof-slug> [--model …] [--note …]
+{{BIN}} lab device-status <slug> <id> active|idle|maintenance|offline [--note …]
+{{BIN}} lab device-remove <slug> <id>
+# 客户服务交易反馈（用实验室账号 key 登记 → 平台核验 → 资质 / 营销）
+{{BIN}} lab feedback <slug>
+{{BIN}} lab feedback-add <slug> --company "客户公司" --rating 5 [--order-ref …] [--consent]
+{{BIN}} lab feedback-summary <slug>
+{{BIN}} lab feedback-delete <slug> <id>
+```
+
+- Lab 的 404 = 不是本账号的 Lab（完全私有），**不要猜 slug、不要重试**。
+- 提交审核前必须先 `lab upload` 至少一份资料。
+- 设备只能从 RATSA AI 目录绑定（公开设备或本账号自己的设备）；状态由 Lab 维护，SOF 资料仍归厂商。
