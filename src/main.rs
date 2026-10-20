@@ -84,6 +84,17 @@ enum Command {
     Sof {
         /// SOF 的 slug（也可粘贴浏览器 URL）
         slug: String,
+        /// 读取指定历史版本（semver，如 1.0.0；省略 = 当前版本）
+        #[arg(long)]
+        version: Option<String>,
+        /// 输出原始 JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// 列出一个 SOF 的版本历史
+    Versions {
+        /// SOF 的 slug
+        slug: String,
         /// 输出原始 JSON
         #[arg(long)]
         json: bool,
@@ -92,6 +103,9 @@ enum Command {
     Manifest {
         /// SOF 的 slug
         slug: String,
+        /// 按指定历史版本读取（semver；省略 = 当前版本）
+        #[arg(long)]
+        version: Option<String>,
         /// 输出原始 JSON
         #[arg(long)]
         json: bool,
@@ -100,6 +114,9 @@ enum Command {
     Packages {
         /// SOF 的 slug
         slug: String,
+        /// 按指定历史版本读取（semver；省略 = 当前版本）
+        #[arg(long)]
+        version: Option<String>,
         /// 输出原始 JSON
         #[arg(long)]
         json: bool,
@@ -111,6 +128,9 @@ enum Command {
         /// 包类型
         #[arg(long, default_value = "device")]
         kind: String,
+        /// 设备 Harness 包按指定历史版本生成（semver；省略 = 当前版本）
+        #[arg(long)]
+        version: Option<String>,
         /// 落盘目录（默认 ~/.ratsa/packages/<slug>/<kind>）
         #[arg(long)]
         out: Option<String>,
@@ -119,6 +139,9 @@ enum Command {
     Package {
         /// SOF 的 slug
         slug: String,
+        /// 按指定历史版本生成（semver；省略 = 当前版本）
+        #[arg(long)]
+        version: Option<String>,
         /// 只输出描述（包内文件清单 / 就绪度 / 大小），不下载归档
         #[arg(long)]
         meta: bool,
@@ -130,6 +153,9 @@ enum Command {
     SofFile {
         /// SOF 的 slug
         slug: String,
+        /// 拉取指定历史版本（semver；省略 = 当前版本）
+        #[arg(long)]
+        version: Option<String>,
         /// 落盘目录（默认 ~/.ratsa/sof）
         #[arg(long)]
         out: Option<String>,
@@ -629,26 +655,53 @@ fn main() {
             limit,
             json,
         } => run_search(&cfg, query, category, limit, json),
-        Command::Sof { slug, json } => run_sof(&cfg, &slug, json),
-        Command::Manifest { slug, json } => run_manifest(&cfg, &slug, json),
-        Command::Packages { slug, json } => run_packages(&cfg, &slug, json),
-        Command::Pull { slug, kind, out } => {
-            let client = api::Client::new(&cfg);
-            let slug = api::slug_or_url(&slug);
-            let out = out.unwrap_or_default();
-            commands::pull_report(&client, &slug, &kind, &out).map(|s| print!("{s}"))
+        Command::Sof { slug, version, json } => {
+            run_sof(&cfg, &slug, version.as_deref().unwrap_or(""), json)
         }
-        Command::Package { slug, meta, out } => {
-            let client = api::Client::new(&cfg);
-            let slug = api::slug_or_url(&slug);
-            let out = out.unwrap_or_default();
-            commands::package_cmd(&client, &slug, meta, &out).map(|s| print!("{s}"))
+        Command::Versions { slug, json } => run_versions(&cfg, &slug, json),
+        Command::Manifest { slug, version, json } => {
+            run_manifest(&cfg, &slug, version.as_deref().unwrap_or(""), json)
         }
-        Command::SofFile { slug, out } => {
+        Command::Packages { slug, version, json } => {
+            run_packages(&cfg, &slug, version.as_deref().unwrap_or(""), json)
+        }
+        Command::Pull { slug, kind, version, out } => {
             let client = api::Client::new(&cfg);
             let slug = api::slug_or_url(&slug);
             let out = out.unwrap_or_default();
-            commands::sof_file_cmd(&client, &slug, &out).map(|s| print!("{s}"))
+            commands::pull_report(
+                &client,
+                &slug,
+                &kind,
+                version.as_deref().unwrap_or(""),
+                &out,
+            )
+            .map(|s| print!("{s}"))
+        }
+        Command::Package { slug, version, meta, out } => {
+            let client = api::Client::new(&cfg);
+            let slug = api::slug_or_url(&slug);
+            let out = out.unwrap_or_default();
+            commands::package_cmd(
+                &client,
+                &slug,
+                version.as_deref().unwrap_or(""),
+                meta,
+                &out,
+            )
+            .map(|s| print!("{s}"))
+        }
+        Command::SofFile { slug, version, out } => {
+            let client = api::Client::new(&cfg);
+            let slug = api::slug_or_url(&slug);
+            let out = out.unwrap_or_default();
+            commands::sof_file_cmd(
+                &client,
+                &slug,
+                version.as_deref().unwrap_or(""),
+                &out,
+            )
+            .map(|s| print!("{s}"))
         }
         Command::SofPush { file, slug, dry_run } => {
             let client = api::Client::new(&cfg);
@@ -827,10 +880,11 @@ fn run_search(
     Ok(())
 }
 
-fn run_sof(cfg: &Config, slug: &str, json: bool) -> Result<(), String> {
+fn run_sof(cfg: &Config, slug: &str, version: &str, json: bool) -> Result<(), String> {
     let client = api::Client::new(cfg);
     let slug = api::slug_or_url(slug);
-    let resp = client.get(&format!("/api/sof/{slug}"))?;
+    let path = commands::with_version(&format!("/api/sof/{slug}"), version);
+    let resp = client.get(&path)?;
     if resp.status >= 400 {
         return Err(resp.error_message());
     }
@@ -843,8 +897,11 @@ fn run_sof(cfg: &Config, slug: &str, json: bool) -> Result<(), String> {
     let name = item.get("name").and_then(|x| x.as_str()).unwrap_or("-");
     let cat = item.get("category").and_then(|x| x.as_str()).unwrap_or("-");
     let desc = item.get("description").and_then(|x| x.as_str()).unwrap_or("");
+    let comp_ver = item.get("version").and_then(|x| x.as_str()).unwrap_or("-");
+    let std_ver = item.get("sof_version").and_then(|x| x.as_str()).unwrap_or("-");
     println!("{name}  [{cat}]");
     println!("slug      : {slug}");
+    println!("版本      : {comp_ver}（SOF 标准 {std_ver}）");
     if !desc.is_empty() {
         println!("描述      : {desc}");
     }
@@ -858,13 +915,14 @@ fn run_sof(cfg: &Config, slug: &str, json: bool) -> Result<(), String> {
     }
     println!();
     println!("下一步：ratsa-harness manifest {slug}   /   ratsa-harness pull {slug}");
+    println!("历史  ：ratsa-harness versions {slug}");
     Ok(())
 }
 
-fn run_manifest(cfg: &Config, slug: &str, json: bool) -> Result<(), String> {
+fn run_versions(cfg: &Config, slug: &str, json: bool) -> Result<(), String> {
     let client = api::Client::new(cfg);
     let slug = api::slug_or_url(slug);
-    let resp = client.get(&format!("/api/harness/sof/{slug}"))?;
+    let resp = client.get(&format!("/api/sof/{slug}/versions"))?;
     if resp.status >= 400 {
         return Err(resp.error_message());
     }
@@ -872,6 +930,28 @@ fn run_manifest(cfg: &Config, slug: &str, json: bool) -> Result<(), String> {
     if json {
         println!("{}", serde_json::to_string_pretty(&v).unwrap_or_default());
         return Ok(());
+    }
+    print!("{}", commands::format_versions(&v));
+    Ok(())
+}
+
+fn run_manifest(cfg: &Config, slug: &str, version: &str, json: bool) -> Result<(), String> {
+    let client = api::Client::new(cfg);
+    let slug = api::slug_or_url(slug);
+    let path = commands::with_version(&format!("/api/harness/sof/{slug}"), version);
+    let resp = client.get(&path)?;
+    if resp.status >= 400 {
+        return Err(resp.error_message());
+    }
+    let v = resp.json();
+    if json {
+        println!("{}", serde_json::to_string_pretty(&v).unwrap_or_default());
+        return Ok(());
+    }
+    if let Some(so) = v.get("sof") {
+        let ver = so.get("version").and_then(|x| x.as_str()).unwrap_or("-");
+        let std = so.get("sof_version").and_then(|x| x.as_str()).unwrap_or("-");
+        println!("设备      : {slug}  ·  版本 {ver}（SOF 标准 {std}）");
     }
     if let Some(rd) = v.get("readiness") {
         let score = rd.get("score").map(|s| s.to_string()).unwrap_or_else(|| "-".into());
@@ -906,10 +986,11 @@ fn run_manifest(cfg: &Config, slug: &str, json: bool) -> Result<(), String> {
     Ok(())
 }
 
-fn run_packages(cfg: &Config, slug: &str, json: bool) -> Result<(), String> {
+fn run_packages(cfg: &Config, slug: &str, version: &str, json: bool) -> Result<(), String> {
     let client = api::Client::new(cfg);
     let slug = api::slug_or_url(slug);
-    let resp = client.get(&format!("/api/harness/sof/{slug}"))?;
+    let path = commands::with_version(&format!("/api/harness/sof/{slug}"), version);
+    let resp = client.get(&path)?;
     if resp.status >= 400 {
         return Err(resp.error_message());
     }

@@ -126,7 +126,19 @@ fn tools() -> Vec<Value> {
             "description": "读取一个 SOF 的完整信息（规格、认证、Agentic Spec、资源链接）。",
             "inputSchema": {
                 "type": "object",
-                "properties": {"slug": str_prop("SOF 的 slug，如 tgkgz48zc4")},
+                "properties": {
+                    "slug": str_prop("SOF 的 slug，如 tgkgz48zc4"),
+                    "version": str_prop("可选：历史版本（semver，如 1.0.0；省略 = 当前版本）")
+                },
+                "required": ["slug"], "additionalProperties": false
+            }
+        }),
+        json!({
+            "name": "ratsa_list_sof_versions",
+            "description": "列出某个 SOF 的版本历史（版本号、说明、时间、当前版本）。配合 version 参数可读取或拉取任意历史版本。",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"slug": str_prop("SOF 的 slug")},
                 "required": ["slug"], "additionalProperties": false
             }
         }),
@@ -135,7 +147,10 @@ fn tools() -> Vec<Value> {
             "description": "读取设备 Harness：派生 manifest、就绪度（readiness 分数 + 问题清单）、以及该设备下的统一 packages 清单（设备 Harness 包 / Eval Repo / 服务测试包）。",
             "inputSchema": {
                 "type": "object",
-                "properties": {"slug": str_prop("SOF 的 slug")},
+                "properties": {
+                    "slug": str_prop("SOF 的 slug"),
+                    "version": str_prop("可选：历史版本（semver；省略 = 当前版本）")
+                },
                 "required": ["slug"], "additionalProperties": false
             }
         }),
@@ -144,7 +159,10 @@ fn tools() -> Vec<Value> {
             "description": "只列出某设备可拉取的 Harness Package 清单（含 package_kind、下载地址、版本、厂商）。",
             "inputSchema": {
                 "type": "object",
-                "properties": {"slug": str_prop("SOF 的 slug")},
+                "properties": {
+                    "slug": str_prop("SOF 的 slug"),
+                    "version": str_prop("可选：历史版本（semver；省略 = 当前版本）")
+                },
                 "required": ["slug"], "additionalProperties": false
             }
         }),
@@ -156,6 +174,7 @@ fn tools() -> Vec<Value> {
                 "properties": {
                     "slug": str_prop("SOF / Eval Repo / 服务 的 slug"),
                     "kind": {"type": "string", "enum": ["device", "eval-repo", "service"], "description": "默认 device"},
+                    "version": str_prop("可选：设备 Harness 包的历史版本（semver；省略 = 当前版本）"),
                     "out_dir": str_prop("可选：落盘目录")
                 },
                 "required": ["slug"], "additionalProperties": false
@@ -173,6 +192,7 @@ fn tools() -> Vec<Value> {
                 "type": "object",
                 "properties": {
                     "slug": str_prop("SOF 的 slug"),
+                    "version": str_prop("可选：历史版本（semver；省略 = 当前版本）"),
                     "meta": {"type": "boolean", "description": "true = 只看描述不下载"},
                     "out_dir": str_prop("可选：落盘目录")
                 },
@@ -186,6 +206,7 @@ fn tools() -> Vec<Value> {
                 "type": "object",
                 "properties": {
                     "slug": str_prop("SOF 的 slug"),
+                    "version": str_prop("可选：历史版本（semver；省略 = 当前版本）"),
                     "out_dir": str_prop("可选：落盘目录")
                 },
                 "required": ["slug"], "additionalProperties": false
@@ -468,7 +489,16 @@ fn run_tool(name: &str, args: &Value, client: &Client) -> Result<String, String>
         }
         "ratsa_read_sof" => {
             let slug = api::slug_or_url(&arg_str(args, "slug"));
-            let resp = client.get(&format!("/api/sof/{slug}"))?;
+            let path = commands::with_version(&format!("/api/sof/{slug}"), &arg_str(args, "version"));
+            let resp = client.get(&path)?;
+            if resp.status >= 400 {
+                return Err(resp.error_message());
+            }
+            Ok(serde_json::to_string_pretty(&resp.json()).unwrap_or_default())
+        }
+        "ratsa_list_sof_versions" => {
+            let slug = api::slug_or_url(&arg_str(args, "slug"));
+            let resp = client.get(&format!("/api/sof/{slug}/versions"))?;
             if resp.status >= 400 {
                 return Err(resp.error_message());
             }
@@ -476,7 +506,11 @@ fn run_tool(name: &str, args: &Value, client: &Client) -> Result<String, String>
         }
         "ratsa_device_harness" => {
             let slug = api::slug_or_url(&arg_str(args, "slug"));
-            let resp = client.get(&format!("/api/harness/sof/{slug}"))?;
+            let path = commands::with_version(
+                &format!("/api/harness/sof/{slug}"),
+                &arg_str(args, "version"),
+            );
+            let resp = client.get(&path)?;
             if resp.status >= 400 {
                 return Err(resp.error_message());
             }
@@ -502,7 +536,11 @@ fn run_tool(name: &str, args: &Value, client: &Client) -> Result<String, String>
         }
         "ratsa_list_packages" => {
             let slug = api::slug_or_url(&arg_str(args, "slug"));
-            let resp = client.get(&format!("/api/harness/sof/{slug}"))?;
+            let path = commands::with_version(
+                &format!("/api/harness/sof/{slug}"),
+                &arg_str(args, "version"),
+            );
+            let resp = client.get(&path)?;
             if resp.status >= 400 {
                 return Err(resp.error_message());
             }
@@ -515,7 +553,8 @@ fn run_tool(name: &str, args: &Value, client: &Client) -> Result<String, String>
                 if k.is_empty() { "device".to_string() } else { k }
             };
             let out = arg_str(args, "out_dir");
-            commands::pull_report(client, &slug, &kind, &out)
+            let version = arg_str(args, "version");
+            commands::pull_report(client, &slug, &kind, &version, &out)
         }
         "ratsa_report_run" => {
             let slug = api::slug_or_url(&arg_str(args, "slug"));
@@ -570,12 +609,14 @@ fn run_tool(name: &str, args: &Value, client: &Client) -> Result<String, String>
             let slug = api::slug_or_url(&arg_str(args, "slug"));
             let meta = args.get("meta").and_then(|v| v.as_bool()).unwrap_or(false);
             let out = arg_str(args, "out_dir");
-            commands::package_cmd(client, &slug, meta, &out)
+            let version = arg_str(args, "version");
+            commands::package_cmd(client, &slug, &version, meta, &out)
         }
         "ratsa_get_sof_file" => {
             let slug = api::slug_or_url(&arg_str(args, "slug"));
             let out = arg_str(args, "out_dir");
-            commands::sof_file_cmd(client, &slug, &out)
+            let version = arg_str(args, "version");
+            commands::sof_file_cmd(client, &slug, &version, &out)
         }
         "ratsa_list_labs" => {
             if !client_has_creds(client) {

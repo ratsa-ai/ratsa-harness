@@ -423,13 +423,14 @@ pub fn format_sofs(rows: &[Value]) -> String {
         return out;
     }
     out.push_str(&format!(
-        "{:<14} {:<24} {:<12} {:<10} {}\n",
-        "SLUG", "名称", "类目", "就绪度", "厂商"
+        "{:<14} {:<24} {:<12} {:<10} {:<10} {}\n",
+        "SLUG", "名称", "类目", "版本", "就绪度", "厂商"
     ));
     for it in rows {
         let slug = it.get("slug").and_then(|x| x.as_str()).unwrap_or("");
         let name = it.get("name").and_then(|x| x.as_str()).unwrap_or("");
         let cat = it.get("category").and_then(|x| x.as_str()).unwrap_or("");
+        let ver = it.get("version").and_then(|x| x.as_str()).unwrap_or("-");
         let ready = it
             .get("agentic_ready")
             .and_then(|x| x.as_bool())
@@ -442,10 +443,11 @@ pub fn format_sofs(rows: &[Value]) -> String {
             .map(|s| format!("@{s}"))
             .unwrap_or_else(|| "-".into());
         out.push_str(&format!(
-            "{:<14} {:<24} {:<12} {:<10} {}\n",
+            "{:<14} {:<24} {:<12} {:<10} {:<10} {}\n",
             slug,
             truncate_cells(name, 22),
             truncate_cells(cat, 10),
+            truncate_cells(ver, 8),
             ready,
             vendor
         ));
@@ -470,16 +472,31 @@ pub fn format_packages(manifest: &Value) -> Result<String, String> {
         .or_else(|| manifest.get("sof").and_then(|s| s.get("slug")))
         .and_then(|x| x.as_str())
         .unwrap_or("");
+    let sof_ver = manifest
+        .pointer("/sof/version")
+        .and_then(|x| x.as_str())
+        .unwrap_or("");
     if pkgs.is_empty() {
         return Ok(format!(
             "设备 {slug} 目前没有可拉取的 Harness Package。\n（厂商尚未发布 Harness / Eval Repo / 服务测试包，或可见性未对你开放）"
         ));
     }
-    let mut out = format!("设备 {slug} 的 Harness Package（{} 个）\n\n", pkgs.len());
+    let mut out = format!(
+        "设备 {slug}{} 的 Harness Package（{} 个）\n\n",
+        if sof_ver.is_empty() {
+            String::new()
+        } else {
+            format!(" @ {sof_ver}")
+        },
+        pkgs.len()
+    );
     for p in pkgs {
         let kind = p.get("package_kind").and_then(|x| x.as_str()).unwrap_or("");
         let name = p.get("name").and_then(|x| x.as_str()).unwrap_or("");
         let id = p.get("id").and_then(|x| x.as_str()).unwrap_or("");
+        let ver = p.get("version").and_then(|x| x.as_str()).unwrap_or("");
+        let pkg_slug = p.get("slug").and_then(|x| x.as_str()).unwrap_or("");
+        let sof_ver = p.get("sof_version").and_then(|x| x.as_str()).unwrap_or("");
         let url = p.get("download_url").and_then(|x| x.as_str()).unwrap_or("");
         let by = p
             .get("provider")
@@ -496,29 +513,90 @@ pub fn format_packages(manifest: &Value) -> Result<String, String> {
         let pull_slug = if url.is_empty() { id } else { url };
         out.push_str(&format!("• [{kind}] {name}\n"));
         out.push_str(&format!("    id  : {id}\n"));
+        if !ver.is_empty() {
+            out.push_str(&format!("    版本: {ver}\n"));
+        }
         if !by.is_empty() {
             out.push_str(&format!("    厂商: {by}\n"));
         }
         if !pull_slug.is_empty() {
+            let version_flag = if kind == "device-harness" && !sof_ver.is_empty() {
+                format!(" --version {sof_ver}")
+            } else {
+                String::new()
+            };
+            let target = if !pkg_slug.is_empty() { pkg_slug } else { pull_slug };
             out.push_str(&format!(
-                "    拉取: ratsa-harness pull {pull_slug} {flag}\n"
+                "    拉取: ratsa-harness pull {target} {flag}{version_flag}\n"
             ));
         }
     }
     Ok(out)
 }
 
+/// Append an optional `?version=` pin to a platform path.
+pub fn with_version(path: &str, version: &str) -> String {
+    let v = version.trim();
+    if v.is_empty() {
+        return path.to_string();
+    }
+    let sep = if path.contains('?') { '&' } else { '?' };
+    format!("{path}{sep}version={}", urlencode(v))
+}
+
+/// Render a SOF's version history.
+pub fn format_versions(v: &Value) -> String {
+    let current = v.get("current").and_then(|x| x.as_str()).unwrap_or("");
+    let items = v
+        .get("items")
+        .and_then(|i| i.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let mut out = String::new();
+    if items.is_empty() {
+        out.push_str("该 SOF 还没有版本记录。\n");
+        return out;
+    }
+    out.push_str(&format!("版本历史（当前 {current}）\n\n"));
+    out.push_str(&format!("{:<12} {:<12} {}\n", "VERSION", "时间", "说明"));
+    for it in items {
+        let ver = it.get("version").and_then(|x| x.as_str()).unwrap_or("-");
+        let at = it
+            .get("created_at")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .chars()
+            .take(10)
+            .collect::<String>();
+        let note = it.get("changelog").and_then(|x| x.as_str()).unwrap_or("");
+        let mark = if ver == current { "*" } else { " " };
+        out.push_str(&format!(
+            "{mark}{:<11} {:<12} {}\n",
+            ver,
+            at,
+            if note.is_empty() { "-" } else { note }
+        ));
+    }
+    out
+}
+
 // --------------------------------------------------------------------- pull
 
 /// Download a Harness Package into `~/.ratsa/packages/<slug>/` (or `out_dir`).
-pub fn pull_report(client: &Client, slug: &str, kind: &str, out_dir: &str) -> Result<String, String> {
+pub fn pull_report(
+    client: &Client,
+    slug: &str,
+    kind: &str,
+    version: &str,
+    out_dir: &str,
+) -> Result<String, String> {
     let kind = match kind {
         "" => "device",
         k @ ("device" | "eval-repo" | "service") => k,
         other => return Err(format!("未知 kind「{other}」，可选 device | eval-repo | service")),
     };
     let path = match kind {
-        "device" => format!("/api/harness/sof/{slug}/package"),
+        "device" => with_version(&format!("/api/harness/sof/{slug}/package"), version),
         "eval-repo" => format!("/api/eval-repo/{slug}/download"),
         _ => format!("/api/eval-service/{slug}/harness/download"),
     };
@@ -564,17 +642,19 @@ fn append_artifact_meta(out: &mut String, headers: &Headers) {
 pub fn package_cmd(
     client: &Client,
     slug: &str,
+    version: &str,
     meta_only: bool,
     out_dir: &str,
 ) -> Result<String, String> {
-    let path = format!("/api/harness/sof/{slug}/package");
+    let path = with_version(&format!("/api/harness/sof/{slug}/package"), version);
     if !meta_only {
-        let out = pull_report(client, slug, "device", out_dir)?;
+        let out = pull_report(client, slug, "device", version, out_dir)?;
         return Ok(format!(
             "{out}\n提示：SOF 文件（可回灌的规范文档）用 `ratsa sof-file {slug}` 单独拉取。\n"
         ));
     }
-    let resp = client.get(&format!("{path}?meta=1"))?;
+    let meta_path = format!("{path}{}meta=1", if path.contains('?') { '&' } else { '?' });
+    let resp = client.get(&meta_path)?;
     if resp.status >= 400 {
         return Err(resp.error_message());
     }
@@ -590,6 +670,11 @@ pub fn package_cmd(
     let ver = pkg.get("version").and_then(|x| x.as_str()).unwrap_or("");
     if !id.is_empty() {
         out.push_str(&format!("  id/version : {id} @ {ver}\n"));
+    }
+    if let Some(sof_ver) = pkg.pointer("/sof/version").and_then(|x| x.as_str()) {
+        if !sof_ver.is_empty() {
+            out.push_str(&format!("  SOF 版本   : {sof_ver}\n"));
+        }
     }
     let score = rd.get("score").map(|s| s.to_string()).unwrap_or_else(|| "-".into());
     let grade = rd.get("grade").and_then(|x| x.as_str()).unwrap_or("-");
@@ -627,14 +712,19 @@ pub fn package_cmd(
 }
 
 /// `ratsa sof-file` —— 拉取 SOF 文件（规范化、可回灌的文档）。
-pub fn sof_file_cmd(client: &Client, slug: &str, out_dir: &str) -> Result<String, String> {
+pub fn sof_file_cmd(
+    client: &Client,
+    slug: &str,
+    version: &str,
+    out_dir: &str,
+) -> Result<String, String> {
     let dir = if out_dir.is_empty() {
         crate::config::home_dir().join("sof")
     } else {
         PathBuf::from(out_dir)
     };
     let (file, size, _h) = client.download_to(
-        &format!("/api/sof/{slug}/file"),
+        &with_version(&format!("/api/sof/{slug}/file"), version),
         &dir,
         &format!("{slug}.sof.json"),
     )?;
@@ -682,6 +772,10 @@ pub fn sof_push_cmd(
 
     // 展开的 JSON 字段 -> 字符串；已经是字符串的原样保留
     let mut body = comp.clone();
+    // 版本是平台生成的历史快照标识；回灌会由平台自动递增一个新版本。
+    if let Some(obj) = body.as_object_mut() {
+        obj.remove("version");
+    }
     let mut coerced: Vec<&str> = Vec::new();
     for f in ["spec", "certification", "skills", "agentic_spec"] {
         let Some(v) = comp.get(f) else { continue };

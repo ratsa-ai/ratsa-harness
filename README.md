@@ -20,8 +20,10 @@ npx @ratsa/cli keys create --name laptop-agent \
 # 3) The loop
 npx @ratsa/cli whoami
 npx @ratsa/cli search servo
+npx @ratsa/cli versions <slug>         # SOF version history
 npx @ratsa/cli package <slug> --meta   # platform-generated device Harness package (describe only)
 npx @ratsa/cli package <slug>          # download (sha256 verified)
+npx @ratsa/cli package <slug> --version 1.0.0  # pin a historical SOF version
 npx @ratsa/cli sof-file <slug>         # fetch the SOF file (can be posted back)
 npx @ratsa/cli report <slug> --score 88 --passed 22 --failed 2
 
@@ -81,15 +83,16 @@ The MCP tool surface is exposed at the same time, so an Agent never has to memor
 | `scopes` | Permission table (fetched from `/api/meta`, with per-scope meaning and default set) |
 | `keys list` / `keys create` / `keys revoke` | Choose scopes + optional `--bound-slug`; `--use` applies immediately |
 | `config set/show/clear` | Local credentials (`~/.ratsa/config.json`, mode 0600) |
-| `search` / `sof` | Cross-vendor search and detail (`--json`) |
-| `manifest` / `packages` | Readiness + issue list + unified `packages[]` |
-| `package` | **Generate the device Harness package server-side** and download it; `--meta` describes it only (files / readiness / size) |
-| `sof-file` | Fetch the SOF file (`kind=ratsa.sof.json`, can be posted straight back to `POST /api/sof`) |
-| `pull` | Pull any kind: `--kind device\|eval-repo\|service`, written to `~/.ratsa/packages/<slug>/<kind>/` |
+| `search` / `sof` | Cross-vendor search and detail (`--json`); `--version` reads a historical snapshot |
+| `versions` | List a SOF's version history (current version + changelog + timestamps) |
+| `manifest` / `packages` | Readiness + issue list + unified `packages[]` (`--version` to pin) |
+| `package` | **Generate the device Harness package server-side** and download it; `--meta` describes it only (files / readiness / size); `--version` pins a historical SOF version |
+| `sof-file` | Fetch the SOF file (`kind=ratsa.sof.json`, can be posted straight back to `POST /api/sof`); `--version` exports a historical version |
+| `pull` | Pull any kind: `--kind device\|eval-repo\|service`, written to `~/.ratsa/packages/<slug>/<kind>/`; `--version` for device packages |
 | `kb` | Pull the SOF knowledge base: index by default, `--sof <slug>` for a device level, `--doc <key\|slug>` prints or saves the Markdown (checksum verified) |
 | `report` | Report a measured run (`source=agent`) into the device's Harness Eval |
 | `feedback` | Submit feedback to the vendor |
-| `mcp` | Run as an MCP stdio server (14 tools) |
+| `mcp` | Run as an MCP stdio server (30 tools) |
 | `upgrade` | Update the `ratsa` binary itself from the release channel |
 
 `upgrade` exists because the npm package version is independent of the CLI release tag
@@ -141,13 +144,17 @@ it reads, its publishes and submissions all belong to that account.
   needed for "vendor authorises a third party to hold a key under its identity" (see below).
 - Server side: `/api/v1/me` returns `acting_as`; the key list returns `bound_user`.
 
-## MCP tools (14)
+## MCP tools (30)
 
 `ratsa_whoami` · `ratsa_scopes` · `ratsa_search_sofs` · `ratsa_read_sof` ·
-`ratsa_device_harness` · `ratsa_list_packages` · `ratsa_pull_package` ·
+`ratsa_list_sof_versions` · `ratsa_device_harness` · `ratsa_list_packages` · `ratsa_pull_package` ·
 `ratsa_list_agents` · `ratsa_generate_package` · `ratsa_get_sof_file` ·
 `ratsa_report_run` · `ratsa_submit_feedback` ·
 `ratsa_list_kb` · `ratsa_read_kb`
+
+`ratsa_read_sof` / `ratsa_device_harness` / `ratsa_list_packages` / `ratsa_pull_package` /
+`ratsa_generate_package` / `ratsa_get_sof_file` accept an optional `version` to pin a historical
+SOF snapshot.
 
 The protocol is MCP over stdio (newline-delimited JSON-RPC 2.0) with no extra dependencies,
 which keeps it easy to audit.

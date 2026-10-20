@@ -107,7 +107,9 @@ unzip -o ~/.ratsa/packages/<slug>/device/*.zip -d ~/.ratsa/packages/<slug>/devic
 
 若宿主把 RATSA 注册成了 MCP server（`{{BIN}} mcp`），直接用这些工具，不必拼命令行：
 
-`ratsa_whoami` · `ratsa_scopes` · `ratsa_search_sofs` · `ratsa_read_sof` · `ratsa_device_harness` · `ratsa_list_packages` · `ratsa_pull_package` · `ratsa_report_run` · `ratsa_submit_feedback`
+`ratsa_whoami` · `ratsa_scopes` · `ratsa_search_sofs` · `ratsa_read_sof` · `ratsa_list_sof_versions` · `ratsa_device_harness` · `ratsa_list_packages` · `ratsa_pull_package` · `ratsa_report_run` · `ratsa_submit_feedback`
+
+读取 / 拉取类工具（`ratsa_read_sof` / `ratsa_device_harness` / `ratsa_pull_package`）可传 `version` 指定历史版本。
 
 ## RATSA Lab（Cloud Lab，完全私有）
 

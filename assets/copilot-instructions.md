@@ -38,7 +38,9 @@
 ## MCP 工具
 
 若 VS Code 已注册 RATSA 的 MCP server（`{{BIN}} mcp`，见 `.vscode/mcp.json`），可直接调用：
-`ratsa_whoami`、`ratsa_scopes`、`ratsa_search_sofs`、`ratsa_read_sof`、`ratsa_device_harness`、`ratsa_list_packages`、`ratsa_pull_package`、`ratsa_report_run`、`ratsa_submit_feedback`。
+`ratsa_whoami`、`ratsa_scopes`、`ratsa_search_sofs`、`ratsa_read_sof`、`ratsa_list_sof_versions`、`ratsa_device_harness`、`ratsa_list_packages`、`ratsa_pull_package`、`ratsa_report_run`、`ratsa_submit_feedback`。
+
+读取 / 拉取类工具可传 `version` 指定 SOF 历史版本。
 
 ## 三种 Harness Package
 

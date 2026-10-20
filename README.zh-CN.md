@@ -20,8 +20,10 @@ npx @ratsa/cli keys create --name laptop-agent \
 # 3. 闭环
 npx @ratsa/cli whoami
 npx @ratsa/cli search 舵机
+npx @ratsa/cli versions <slug>         # SOF 版本历史
 npx @ratsa/cli package <slug> --meta   # 平台官方生成设备 Harness 包（先看描述）
 npx @ratsa/cli package <slug>          # 下载（自动校验 sha256）
+npx @ratsa/cli package <slug> --version 1.0.0  # 按历史版本生成
 npx @ratsa/cli sof-file <slug>         # 拉取 SOF 文件（可回灌）
 npx @ratsa/cli report <slug> --score 88 --passed 22 --failed 2
 
@@ -74,15 +76,16 @@ MCP 工具面同时暴露，Agent 可以完全不用记命令。
 | `scopes` | 权限表（从 `/api/meta` 取，含每项含义与默认集合） |
 | `keys list` / `keys create` / `keys revoke` | 权限自选 + 可选 `--bound-slug`；`--use` 立即应用 |
 | `config set/show/clear` | 本地凭证（`~/.ratsa/config.json`，0600） |
-| `search` / `sof` | 跨厂商检索与详情（`--json`） |
-| `manifest` / `packages` | 就绪度 + 问题清单 + 统一 `packages[]` |
-| `package` | **平台官方生成设备 Harness 包**并下载；`--meta` 只看描述（包内文件/就绪度/大小） |
-| `sof-file` | 拉取 SOF 文件（`kind=ratsa.sof.json`，可直接回灌 `POST /api/sof`） |
-| `pull` | 拉取任意 kind：`--kind device\|eval-repo\|service`，落盘 `~/.ratsa/packages/<slug>/<kind>/` |
+| `search` / `sof` | 跨厂商检索与详情（`--json`）；`--version` 读历史快照 |
+| `versions` | 列出一个 SOF 的版本历史（当前版本 + 说明 + 时间） |
+| `manifest` / `packages` | 就绪度 + 问题清单 + 统一 `packages[]`（`--version` 按版本读） |
+| `package` | **平台官方生成设备 Harness 包**并下载；`--meta` 只看描述（包内文件/就绪度/大小）；`--version` 按历史版本生成 |
+| `sof-file` | 拉取 SOF 文件（`kind=ratsa.sof.json`，可直接回灌 `POST /api/sof`）；`--version` 导出历史版本 |
+| `pull` | 拉取任意 kind：`--kind device\|eval-repo\|service`，落盘 `~/.ratsa/packages/<slug>/<kind>/`；设备包支持 `--version` |
 | `kb` | 拉取 SOF 知识库：无参看索引，`--sof <slug>` 看设备分层，`--doc <key\|slug>` 打印/落盘 Markdown 原文（校验 checksum） |
 | `report` | 回传实测（`source=agent`），写入被测设备的 Harness Eval |
 | `feedback` | 提交反馈给厂商 |
-| `mcp` | 以 MCP stdio server 运行（14 个工具） |
+| `mcp` | 以 MCP stdio server 运行（30 个工具） |
 | `upgrade` | 从发布通道更新 `ratsa` 二进制自身 |
 
 `upgrade` 的存在原因：npm 包的版本号与 CLI 的 tag **相互独立**（见 `npm/README.zh-CN.md`），
@@ -129,13 +132,16 @@ key 能做什么**只**由权限表决定；默认集合是「读 + 拉取」，
   若需要「厂商授权第三方持有自己身份的 key」，需要一条**授权邀请**流程（见下）。
 - 平台侧解析：`/api/v1/me` 返回 `acting_as`；key 列表返回 `bound_user`。
 
-## MCP 工具（14 个）
+## MCP 工具（30 个）
 
 `ratsa_whoami` · `ratsa_scopes` · `ratsa_search_sofs` · `ratsa_read_sof` ·
-`ratsa_device_harness` · `ratsa_list_packages` · `ratsa_pull_package` ·
+`ratsa_list_sof_versions` · `ratsa_device_harness` · `ratsa_list_packages` · `ratsa_pull_package` ·
 `ratsa_list_agents` · `ratsa_generate_package` · `ratsa_get_sof_file` ·
 `ratsa_report_run` · `ratsa_submit_feedback` ·
 `ratsa_list_kb` · `ratsa_read_kb`
+
+`ratsa_read_sof` / `ratsa_device_harness` / `ratsa_list_packages` / `ratsa_pull_package` /
+`ratsa_generate_package` / `ratsa_get_sof_file` 支持可选 `version`，按历史版本读取或拉取。
 
 协议为 MCP stdio（换行分隔的 JSON-RPC 2.0），无额外依赖，便于审计。
 
