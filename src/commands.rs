@@ -4,7 +4,8 @@
 //! experience can never drift apart: `ratsa-harness pull …` and the
 //! `ratsa_pull_package` MCP tool run the exact same code.
 
-use std::path::PathBuf;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 
@@ -2191,4 +2192,930 @@ pub(crate) fn sha256_hex(data: &[u8]) -> String {
         out.push_str(&format!("{b:02x}"));
     }
     out
+}
+
+// --------------------------------------------------------------------- RTH
+
+/// `ratsa rth spec` — the machine-readable RTH (Ratsa Runtime Harness) contract.
+pub fn rth_spec(client: &Client, json_out: bool) -> Result<String, String> {
+    let resp = client.get("/api/rth/spec")?;
+    if resp.status >= 400 {
+        return Err(resp.error_message());
+    }
+    let v = resp.json();
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+    }
+    let mut out = String::new();
+    out.push_str(&format!("RTH · {}\n", v.get("manifest_spec").and_then(|x| x.as_str()).unwrap_or("")));
+    if let Some(d) = v.get("definition").and_then(|x| x.as_str()) {
+        out.push_str(&format!("{d}\n\n"));
+    }
+    out.push_str("Planes\n");
+    for p in v.get("planes").and_then(|x| x.as_array()).cloned().unwrap_or_default() {
+        out.push_str(&format!(
+            "  • {} — {}\n",
+            p.get("name").and_then(|x| x.as_str()).unwrap_or(""),
+            p.get("role").and_then(|x| x.as_str()).unwrap_or("")
+        ));
+    }
+    if let Some(caps) = v.pointer("/rth/capabilities").and_then(|x| x.as_array()) {
+        out.push_str("\nRTHCore capabilities\n");
+        for c in caps {
+            out.push_str(&format!("  • {}\n", c.as_str().unwrap_or("")));
+        }
+    }
+    out.push_str("\nUse cases\n");
+    for u in v.get("use_cases").and_then(|x| x.as_array()).cloned().unwrap_or_default() {
+        out.push_str(&format!(
+            "  • {}\n",
+            u.get("text").and_then(|x| x.as_str()).unwrap_or("")
+        ));
+    }
+    Ok(out)
+}
+
+pub fn rth_projects(client: &Client, query: &str, json_out: bool) -> Result<String, String> {
+    let path = if query.trim().is_empty() {
+        "/api/rth/projects".to_string()
+    } else {
+        format!("/api/rth/projects?q={}", urlencode(query))
+    };
+    let resp = client.get(&path)?;
+    if resp.status >= 400 {
+        return Err(resp.error_message());
+    }
+    let v = resp.json();
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+    }
+    let items = v.get("items").and_then(|x| x.as_array()).cloned().unwrap_or_default();
+    if items.is_empty() {
+        return Ok("没有公开的 RTH 项目。\n".into());
+    }
+    let mut out = String::from("SLUG          NAME                          CORE      STATUS    AGENTIC\n");
+    for it in items {
+        out.push_str(&format!(
+            "{:<13} {:<29} {:<9} {:<9} {}\n",
+            it.get("slug").and_then(|x| x.as_str()).unwrap_or(""),
+            truncate_cells(it.get("name").and_then(|x| x.as_str()).unwrap_or(""), 27),
+            it.get("rth_core_version").and_then(|x| x.as_str()).unwrap_or("-"),
+            it.get("status").and_then(|x| x.as_str()).unwrap_or("-"),
+            it.get("agentic_status").and_then(|x| x.as_str()).unwrap_or("-"),
+        ));
+    }
+    Ok(out)
+}
+
+pub fn rth_get(client: &Client, slug: &str, json_out: bool) -> Result<String, String> {
+    let resp = client.get(&format!("/api/rth/projects/{slug}"))?;
+    if resp.status >= 400 {
+        return Err(resp.error_message());
+    }
+    let v = resp.json();
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+    }
+    let item = v.get("item").cloned().unwrap_or(json!({}));
+    let mut out = String::new();
+    out.push_str(&format!(
+        "{}  [{}]\n",
+        item.get("name").and_then(|x| x.as_str()).unwrap_or("-"),
+        item.get("status").and_then(|x| x.as_str()).unwrap_or("-")
+    ));
+    out.push_str(&format!("slug        : {slug}\n"));
+    out.push_str(&format!(
+        "RTHCore     : {}\n",
+        item.get("rth_core_version").and_then(|x| x.as_str()).unwrap_or("-")
+    ));
+    out.push_str(&format!(
+        "Agentic     : {} {}\n",
+        item.get("agentic_status").and_then(|x| x.as_str()).unwrap_or("-"),
+        item.get("agentic_score").map(|s| s.to_string()).unwrap_or_default()
+    ));
+    if let Some(key) = item.get("signing_public_key").and_then(|x| x.as_str()) {
+        out.push_str(&format!("signing key : {key}\n"));
+    }
+    if let Some(pkgs) = item.get("packages").and_then(|x| x.as_array()) {
+        out.push_str(&format!("\npackages ({})\n", pkgs.len()));
+        for p in pkgs {
+            out.push_str(&format!(
+                "  • [{}] {} v{} — {}\n",
+                p.get("kind").and_then(|x| x.as_str()).unwrap_or(""),
+                p.get("name").and_then(|x| x.as_str()).unwrap_or(""),
+                p.get("version").and_then(|x| x.as_str()).unwrap_or(""),
+                p.get("status").and_then(|x| x.as_str()).unwrap_or("")
+            ));
+        }
+    }
+    if let Some(ch) = v.get("links").and_then(|l| l.get("channel")).and_then(|x| x.as_str()) {
+        out.push_str(&format!("\nchannel: {ch}\n"));
+    }
+    Ok(out)
+}
+
+pub fn rth_channel(client: &Client, slug: &str, json_out: bool) -> Result<String, String> {
+    let resp = client.get(&format!("/api/rth/projects/{slug}/channel"))?;
+    if resp.status >= 400 {
+        return Err(resp.error_message());
+    }
+    let v = resp.json();
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+    }
+    let mut out = String::new();
+    out.push_str(&format!(
+        "RTH channel · {} → {} → device\n",
+        v.pointer("/service/provider").and_then(|x| x.as_str()).unwrap_or("RATSA AI"),
+        v.pointer("/system/harness").and_then(|x| x.as_str()).unwrap_or("RTH")
+    ));
+    out.push_str(&format!(
+        "ready       : {}\n",
+        v.get("ready").and_then(|x| x.as_bool()).unwrap_or(false)
+    ));
+    if let Some(missing) = v.get("missing").and_then(|x| x.as_array()) {
+        if !missing.is_empty() {
+            out.push_str("missing     : ");
+            out.push_str(&missing.iter().filter_map(|x| x.as_str()).collect::<Vec<_>>().join(", "));
+            out.push('\n');
+        }
+    }
+    if let Some(pkgs) = v.get("packages").and_then(|x| x.as_array()) {
+        out.push_str(&format!("packages    : {}\n", pkgs.len()));
+        for p in pkgs {
+            out.push_str(&format!(
+                "  • [{}] {} v{}\n",
+                p.get("kind").and_then(|x| x.as_str()).unwrap_or(""),
+                p.get("name").and_then(|x| x.as_str()).unwrap_or(""),
+                p.get("version").and_then(|x| x.as_str()).unwrap_or("")
+            ));
+        }
+    }
+    Ok(out)
+}
+
+pub fn rth_verify(client: &Client, slug: &str, package_id: u64, json_out: bool) -> Result<String, String> {
+    let resp = client.get(&format!("/api/rth/projects/{slug}/packages/{package_id}/verify"))?;
+    if resp.status >= 400 {
+        return Err(resp.error_message());
+    }
+    let v = resp.json();
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+    }
+    let mut out = String::new();
+    out.push_str(&format!(
+        "RTH Signature · project {slug} · package {package_id}\nvalid    : {}\nadmitted : {}\n",
+        v.get("valid").and_then(|x| x.as_bool()).unwrap_or(false),
+        v.get("admitted").and_then(|x| x.as_bool()).unwrap_or(false)
+    ));
+    for c in v.get("checks").and_then(|x| x.as_array()).cloned().unwrap_or_default() {
+        out.push_str(&format!(
+            "  {} {}\n",
+            if c.get("ok").and_then(|x| x.as_bool()).unwrap_or(false) { "✓" } else { "✗" },
+            c.get("id").and_then(|x| x.as_str()).unwrap_or("")
+        ));
+    }
+    Ok(out)
+}
+
+
+// ---------------------------------------------------------------- RTH platform writes
+
+pub fn rth_create(
+    client: &Client,
+    name: &str,
+    summary: &str,
+    description: &str,
+    core_version: &str,
+    repo: &str,
+    docs: &str,
+    sof: &str,
+    lab: &str,
+    visibility: &str,
+    json_out: bool,
+) -> Result<String, String> {
+    let body = json!({
+        "name": name,
+        "summary": summary,
+        "description": description,
+        "rth_core_version": core_version,
+        "repository_url": repo,
+        "docs_url": docs,
+        "sof_slug": sof,
+        "lab_slug": lab,
+        "visibility": visibility,
+    });
+    let resp = client.post("/api/rth/projects", &body)?;
+    if resp.status >= 400 {
+        return Err(resp.error_message());
+    }
+    let v = resp.json();
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+    }
+    let item = v.get("item").cloned().unwrap_or(json!({}));
+    let mut out = String::from("RTH 项目已创建\n");
+    out.push_str(&format!(
+        "  name  : {}\n  slug  : {}\n  key   : {}\n",
+        item.get("name").and_then(|x| x.as_str()).unwrap_or(name),
+        item.get("slug").and_then(|x| x.as_str()).unwrap_or("-"),
+        item.get("signing_public_key").and_then(|x| x.as_str()).unwrap_or("-"),
+    ));
+    if let Some(web) = v.pointer("/links/web").and_then(|x| x.as_str()) {
+        out.push_str(&format!("  web   : {web}\n"));
+    }
+    Ok(out)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn rth_package(
+    client: &Client,
+    slug: &str,
+    name: &str,
+    version: &str,
+    kind: &str,
+    file: Option<&str>,
+    checksum: &str,
+    metadata: &str,
+    description: &str,
+    json_out: bool,
+) -> Result<String, String> {
+    let path = format!("/api/rth/projects/{slug}/packages");
+    let resp = if let Some(file) = file {
+        let bytes = fs::read(file).map_err(|e| format!("读不了 {file}：{e}"))?;
+        let filename = Path::new(file)
+            .file_name()
+            .and_then(|x| x.to_str())
+            .unwrap_or("package.bin");
+        let extra = [
+            ("name", name),
+            ("version", version),
+            ("kind", kind),
+            ("description", description),
+            ("metadata", metadata),
+        ];
+        client.post_multipart(&path, "file", filename, "application/octet-stream", &extra, &bytes)?
+    } else {
+        let body = json!({
+            "name": name, "version": version, "kind": kind,
+            "description": description, "metadata": metadata, "checksum": checksum,
+        });
+        client.post(&path, &body)?
+    };
+    if resp.status >= 400 {
+        return Err(resp.error_message());
+    }
+    let v = resp.json();
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+    }
+    let item = v.get("item").cloned().unwrap_or(json!({}));
+    Ok(format!(
+        "Package 已登记\n  id      : {}\n  name    : {}\n  version : {}\n  kind    : {}\n  status  : {}\n  checksum: {}\n下一步：ratsa rth sign {slug} {}\n",
+        item.get("id").map(|x| x.to_string()).unwrap_or_else(|| "-".into()),
+        item.get("name").and_then(|x| x.as_str()).unwrap_or(name),
+        item.get("version").and_then(|x| x.as_str()).unwrap_or(version),
+        item.get("kind").and_then(|x| x.as_str()).unwrap_or(kind),
+        item.get("status").and_then(|x| x.as_str()).unwrap_or("-"),
+        item.get("checksum").and_then(|x| x.as_str()).unwrap_or("-"),
+        item.get("id").map(|x| x.to_string()).unwrap_or_else(|| "<id>".into()),
+    ))
+}
+
+pub fn rth_sign(client: &Client, slug: &str, package_id: u64, json_out: bool) -> Result<String, String> {
+    let resp = client.post(
+        &format!("/api/rth/projects/{slug}/packages/{package_id}/sign"),
+        &json!({}),
+    )?;
+    if resp.status >= 400 {
+        return Err(resp.error_message());
+    }
+    let v = resp.json();
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+    }
+    Ok(format!(
+        "RTH Signature\n  valid   : {}\n  status  : {}\n  algo    : {}\n  key id  : {}\n",
+        v.get("valid").and_then(|x| x.as_bool()).unwrap_or(false),
+        v.pointer("/item/status").and_then(|x| x.as_str()).unwrap_or("-"),
+        v.pointer("/item/signature_algo").and_then(|x| x.as_str()).unwrap_or("-"),
+        v.pointer("/item/signature_key_id").and_then(|x| x.as_str()).unwrap_or("-"),
+    ))
+}
+
+pub fn rth_validate(client: &Client, slug: &str, json_out: bool) -> Result<String, String> {
+    let resp = client.post(&format!("/api/rth/projects/{slug}/validate-agentic"), &json!({}))?;
+    if resp.status >= 400 {
+        return Err(resp.error_message());
+    }
+    let v = resp.json();
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+    }
+    Ok(format!(
+        "Agentic validation\n  status : {}\n  score  : {}\n  grade  : {}\n",
+        v.pointer("/item/agentic_status").and_then(|x| x.as_str()).unwrap_or("-"),
+        v.pointer("/item/agentic_score").map(|x| x.to_string()).unwrap_or_else(|| "-".into()),
+        v.pointer("/result/readiness/grade").and_then(|x| x.as_str()).unwrap_or("-"),
+    ))
+}
+
+pub fn rth_admit(
+    client: &Client,
+    slug: &str,
+    package_id: u64,
+    note: &str,
+    reject: bool,
+) -> Result<String, String> {
+    let action = if reject { "reject" } else { "admit" };
+    let resp = client.post(
+        &format!("/api/rth/projects/{slug}/packages/{package_id}/{action}"),
+        &json!({ "note": note }),
+    )?;
+    if resp.status >= 400 {
+        return Err(resp.error_message());
+    }
+    let v = resp.json();
+    Ok(format!(
+        "Package {package_id} {}\n  status : {}\n",
+        if reject { "已拒绝" } else { "已准入" },
+        v.pointer("/item/status").and_then(|x| x.as_str()).unwrap_or("-")
+    ))
+}
+
+// ---------------------------------------------------------------- RTH local runtime
+
+const RTH_MANIFEST: &str = "ratsa.rth.json";
+const RTH_STATE: &str = ".rth";
+
+fn valid_rth_kind(kind: &str) -> bool {
+    matches!(
+        kind,
+        "rth-core" | "rth-plugin" | "bsp" | "suite" | "sdk" | "hal" | "os" | "kernel"
+            | "layer" | "perception" | "ontology" | "mem" | "service" | "other"
+    )
+}
+
+fn now_unix() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+fn rth_root(dir: Option<&str>) -> Result<PathBuf, String> {
+    if let Some(d) = dir {
+        return Ok(PathBuf::from(d));
+    }
+    let mut p = std::env::current_dir().map_err(|e| e.to_string())?;
+    loop {
+        if p.join(RTH_MANIFEST).exists() || p.join(RTH_STATE).exists() {
+            return Ok(p);
+        }
+        if !p.pop() {
+            break;
+        }
+    }
+    Err("未找到 RTH 项目：请先运行 `ratsa rth init`（或在 --dir 指定目录）".into())
+}
+
+fn rth_manifest_path(root: &Path) -> PathBuf {
+    root.join(RTH_MANIFEST)
+}
+
+fn load_rth_manifest(root: &Path) -> Result<Value, String> {
+    let path = rth_manifest_path(root);
+    let raw = fs::read_to_string(&path).map_err(|e| format!("读不了 {}：{e}", path.display()))?;
+    serde_json::from_str(&raw).map_err(|e| format!("{} 不是合法 JSON：{e}", path.display()))
+}
+
+fn state_file(root: &Path, name: &str) -> PathBuf {
+    root.join(RTH_STATE).join(name)
+}
+
+fn load_state(root: &Path, name: &str, default: Value) -> Value {
+    let path = state_file(root, name);
+    fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or(default)
+}
+
+fn save_state(root: &Path, name: &str, value: &Value) -> Result<(), String> {
+    let dir = root.join(RTH_STATE);
+    fs::create_dir_all(&dir).map_err(|e| format!("无法创建 {}：{e}", dir.display()))?;
+    let path = dir.join(name);
+    let raw = serde_json::to_string_pretty(value).map_err(|e| e.to_string())?;
+    fs::write(&path, raw + "\n").map_err(|e| format!("无法写入 {}：{e}", path.display()))
+}
+
+pub fn rth_init(dir: Option<&str>, name: Option<&str>, core_version: &str) -> Result<String, String> {
+    let root = dir.map(PathBuf::from).unwrap_or(std::env::current_dir().map_err(|e| e.to_string())?);
+    fs::create_dir_all(&root).map_err(|e| format!("无法创建 {}：{e}", root.display()))?;
+    let manifest_path = rth_manifest_path(&root);
+    if manifest_path.exists() {
+        return Err(format!("已存在 {}，不会覆盖", manifest_path.display()));
+    }
+    let project = name
+        .map(|x| x.to_string())
+        .or_else(|| root.file_name().and_then(|x| x.to_str()).map(|x| x.to_string()))
+        .unwrap_or_else(|| "rth-project".into());
+    let manifest = json!({
+        "kind": "ratsa.rth.json",
+        "spec_version": "rth/1.0",
+        "name": project,
+        "rth_core_version": core_version,
+        "build_graph": {
+            "nodes": ["rth-core", "plugin", "perception", "ontology", "mem"],
+            "edges": []
+        },
+        "plugins": [],
+        "robot_mem": {
+            "stores": ["episodic", "semantic", "working"],
+            "engine": "local"
+        },
+        "perception": [],
+        "ontology": {
+            "namespace": project,
+            "version": "1.0.0",
+            "entities": ["device", "sensor", "capability", "action", "state"],
+            "actions": []
+        }
+    });
+    let raw = serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?;
+    fs::write(&manifest_path, raw + "\n").map_err(|e| format!("无法写入 {}：{e}", manifest_path.display()))?;
+    save_state(&root, "plugins.json", &json!([]))?;
+    save_state(
+        &root,
+        "mem.json",
+        &json!({"episodic": {}, "semantic": {}, "working": {}}),
+    )?;
+    save_state(
+        &root,
+        "runtime.json",
+        &json!({
+            "kind": "ratsa.rth.runtime",
+            "spec_version": "rth/1.0",
+            "rth_core_version": core_version,
+            "created_at": now_unix()
+        }),
+    )?;
+    Ok(format!(
+        "RTH 项目已初始化：{}\n  manifest : {}\n  state    : {}/\n下一步：ratsa rth status / ratsa rth plugin add <id> / ratsa rth mem set <key> <value>\n",
+        project,
+        manifest_path.display(),
+        root.join(RTH_STATE).display()
+    ))
+}
+
+pub fn rth_status(dir: Option<&str>, json_out: bool) -> Result<String, String> {
+    let root = rth_root(dir)?;
+    let manifest = load_rth_manifest(&root)?;
+    let plugins = load_state(&root, "plugins.json", json!([]));
+    let mem = load_state(&root, "mem.json", json!({}));
+    let ontology_ok = manifest
+        .pointer("/ontology/namespace")
+        .and_then(|x| x.as_str())
+        .map(|x| !x.is_empty())
+        .unwrap_or(false);
+    let summary = json!({
+        "root": root,
+        "name": manifest.get("name"),
+        "spec_version": manifest.get("spec_version"),
+        "rth_core_version": manifest.get("rth_core_version"),
+        "plugins": plugins.as_array().map(|x| x.len()).unwrap_or(0),
+        "perception": manifest.get("perception").and_then(|x| x.as_array()).map(|x| x.len()).unwrap_or(0),
+        "build_nodes": manifest.pointer("/build_graph/nodes").and_then(|x| x.as_array()).map(|x| x.len()).unwrap_or(0),
+        "mem": mem.as_object().map(|o| o.iter().map(|(k, v)| {
+            (k.clone(), json!(v.as_object().map(|m| m.len()).unwrap_or(0)))
+        }).collect::<serde_json::Map<_, _>>()),
+        "ontology_ok": ontology_ok,
+    });
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&summary).unwrap_or_default());
+    }
+    Ok(format!(
+        "RTH runtime · {}\n  root        : {}\n  spec        : {}\n  RTHCore     : {}\n  plugins     : {}\n  perception  : {}\n  build nodes : {}\n  ontology    : {}\n",
+        manifest.get("name").and_then(|x| x.as_str()).unwrap_or("-"),
+        root.display(),
+        manifest.get("spec_version").and_then(|x| x.as_str()).unwrap_or("-"),
+        manifest.get("rth_core_version").and_then(|x| x.as_str()).unwrap_or("-"),
+        summary.get("plugins").map(|x| x.to_string()).unwrap_or_else(|| "0".into()),
+        summary.get("perception").map(|x| x.to_string()).unwrap_or_else(|| "0".into()),
+        summary.get("build_nodes").map(|x| x.to_string()).unwrap_or_else(|| "0".into()),
+        if ontology_ok { "ok" } else { "missing namespace" },
+    ))
+}
+
+pub fn rth_plugin_list(dir: Option<&str>, json_out: bool) -> Result<String, String> {
+    let root = rth_root(dir)?;
+    let plugins = load_state(&root, "plugins.json", json!([]));
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&plugins).unwrap_or_default());
+    }
+    let items = plugins.as_array().cloned().unwrap_or_default();
+    if items.is_empty() {
+        return Ok("没有已安装的 RTH 插件。\n".into());
+    }
+    let mut out = String::from("ID                  VERSION   KIND           CHANNEL   SOURCE\n");
+    for p in items {
+        out.push_str(&format!(
+            "{:<19} {:<9} {:<14} {:<9} {}\n",
+            truncate_cells(p.get("id").and_then(|x| x.as_str()).unwrap_or(""), 17),
+            truncate_cells(p.get("version").and_then(|x| x.as_str()).unwrap_or("-"), 8),
+            truncate_cells(p.get("kind").and_then(|x| x.as_str()).unwrap_or("-"), 12),
+            truncate_cells(p.get("channel").and_then(|x| x.as_str()).unwrap_or("-"), 8),
+            p.get("source").and_then(|x| x.as_str()).unwrap_or(""),
+        ));
+    }
+    Ok(out)
+}
+
+pub fn rth_plugin_add(
+    dir: Option<&str>,
+    id: &str,
+    version: &str,
+    kind: &str,
+    source: &str,
+    channel: &str,
+) -> Result<String, String> {
+    if !valid_rth_kind(kind) {
+        return Err(format!("未知插件类型「{kind}」"));
+    }
+    let root = rth_root(dir)?;
+    let existing = load_state(&root, "plugins.json", json!([]));
+    let mut items = existing.as_array().cloned().unwrap_or_default();
+    let now = now_unix();
+    if let Some(item) = items
+        .iter_mut()
+        .find(|p| p.get("id").and_then(|x| x.as_str()) == Some(id))
+    {
+        item["version"] = json!(version);
+        item["kind"] = json!(kind);
+        item["source"] = json!(source);
+        item["channel"] = json!(channel);
+        item["updated_at"] = json!(now);
+    } else {
+        items.push(json!({
+            "id": id, "version": version, "kind": kind, "source": source,
+            "channel": channel, "installed_at": now, "updated_at": now
+        }));
+    }
+    save_state(&root, "plugins.json", &Value::Array(items))?;
+    Ok(format!("插件 {id}@{version} 已登记（{kind}/{channel}）。\n"))
+}
+
+pub fn rth_plugin_update(dir: Option<&str>, id: &str, version: &str) -> Result<String, String> {
+    let root = rth_root(dir)?;
+    let existing = load_state(&root, "plugins.json", json!([]));
+    let mut items = existing.as_array().cloned().unwrap_or_default();
+    let now = now_unix();
+    let Some(item) = items
+        .iter_mut()
+        .find(|p| p.get("id").and_then(|x| x.as_str()) == Some(id))
+    else {
+        return Err(format!("插件 {id} 未安装"));
+    };
+    item["version"] = json!(version);
+    item["updated_at"] = json!(now);
+    save_state(&root, "plugins.json", &Value::Array(items))?;
+    Ok(format!("插件 {id} 已更新到 {version}。\n"))
+}
+
+pub fn rth_plugin_remove(dir: Option<&str>, id: &str) -> Result<String, String> {
+    let root = rth_root(dir)?;
+    let existing = load_state(&root, "plugins.json", json!([]));
+    let mut items = existing.as_array().cloned().unwrap_or_default();
+    let before = items.len();
+    items.retain(|p| p.get("id").and_then(|x| x.as_str()) != Some(id));
+    if items.len() == before {
+        return Err(format!("插件 {id} 未安装"));
+    }
+    save_state(&root, "plugins.json", &Value::Array(items))?;
+    Ok(format!("插件 {id} 已移除。\n"))
+}
+
+fn valid_mem_store(store: &str) -> Result<(), String> {
+    match store {
+        "episodic" | "semantic" | "working" => Ok(()),
+        _ => Err(format!("未知 Mem store「{store}」，可选 episodic | semantic | working")),
+    }
+}
+
+fn mem_object(root: &Path) -> Value {
+    let mut mem = load_state(root, "mem.json", json!({}));
+    if !mem.is_object() {
+        mem = json!({});
+    }
+    mem
+}
+
+pub fn rth_mem_list(dir: Option<&str>, store: &str, json_out: bool) -> Result<String, String> {
+    valid_mem_store(store)?;
+    let root = rth_root(dir)?;
+    let mem = mem_object(&root);
+    let items = mem.get(store).and_then(|x| x.as_object()).cloned().unwrap_or_default();
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&Value::Object(items)).unwrap_or_default());
+    }
+    if items.is_empty() {
+        return Ok(format!("Mem[{store}] 为空。\n"));
+    }
+    let mut out = format!("Mem[{store}]\n");
+    for (k, v) in items {
+        out.push_str(&format!("  {k} = {}\n", api::truncate(&v.to_string(), 160)));
+    }
+    Ok(out)
+}
+
+pub fn rth_mem_get(dir: Option<&str>, store: &str, key: &str, json_out: bool) -> Result<String, String> {
+    valid_mem_store(store)?;
+    let root = rth_root(dir)?;
+    let mem = mem_object(&root);
+    let Some(v) = mem.pointer(&format!("/{store}/{key}")) else {
+        return Err(format!("Mem[{store}] 没有键 {key}"));
+    };
+    if json_out {
+        Ok(serde_json::to_string_pretty(v).unwrap_or_default())
+    } else {
+        Ok(format!("{}\n", v))
+    }
+}
+
+pub fn rth_mem_set(dir: Option<&str>, store: &str, key: &str, value: &str) -> Result<String, String> {
+    valid_mem_store(store)?;
+    let root = rth_root(dir)?;
+    let mut mem = mem_object(&root);
+    if !mem.get(store).map(|x| x.is_object()).unwrap_or(false) {
+        mem[store] = json!({});
+    }
+    let parsed: Value = serde_json::from_str(value).unwrap_or_else(|_| json!(value));
+    mem[store][key] = parsed;
+    save_state(&root, "mem.json", &mem)?;
+    Ok(format!("Mem[{store}].{key} 已写入。\n"))
+}
+
+pub fn rth_mem_delete(dir: Option<&str>, store: &str, key: &str) -> Result<String, String> {
+    valid_mem_store(store)?;
+    let root = rth_root(dir)?;
+    let mut mem = mem_object(&root);
+    let removed = mem
+        .get_mut(store)
+        .and_then(|x| x.as_object_mut())
+        .and_then(|o| o.remove(key));
+    if removed.is_none() {
+        return Err(format!("Mem[{store}] 没有键 {key}"));
+    }
+    save_state(&root, "mem.json", &mem)?;
+    Ok(format!("Mem[{store}].{key} 已删除。\n"))
+}
+
+pub fn rth_perception(dir: Option<&str>, json_out: bool) -> Result<String, String> {
+    let root = rth_root(dir)?;
+    let manifest = load_rth_manifest(&root)?;
+    let items = manifest
+        .get("perception")
+        .and_then(|x| x.as_array())
+        .cloned()
+        .unwrap_or_default();
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&Value::Array(items)).unwrap_or_default());
+    }
+    if items.is_empty() {
+        return Ok("清单中没有感知部件。\n".into());
+    }
+    let mut out = String::from("ID                  MODALITY    INTERFACE        ONTOLOGY\n");
+    for p in items {
+        out.push_str(&format!(
+            "{:<19} {:<11} {:<16} {}\n",
+            truncate_cells(p.get("id").and_then(|x| x.as_str()).unwrap_or(""), 17),
+            truncate_cells(p.get("modality").and_then(|x| x.as_str()).unwrap_or("-"), 10),
+            truncate_cells(p.get("interface").and_then(|x| x.as_str()).unwrap_or("-"), 15),
+            p.get("ontology_ref").and_then(|x| x.as_str()).unwrap_or(""),
+        ));
+    }
+    Ok(out)
+}
+
+pub fn rth_ontology(dir: Option<&str>, json_out: bool) -> Result<String, String> {
+    let root = rth_root(dir)?;
+    let manifest = load_rth_manifest(&root)?;
+    let mut errors: Vec<String> = Vec::new();
+    let Some(onto) = manifest.get("ontology") else {
+        return Err("清单缺少 ontology 区块".into());
+    };
+    let namespace = onto.get("namespace").and_then(|x| x.as_str()).unwrap_or("");
+    if namespace.is_empty() {
+        errors.push("ontology.namespace 不能为空".into());
+    }
+    if onto.get("version").and_then(|x| x.as_str()).unwrap_or("").is_empty() {
+        errors.push("ontology.version 不能为空".into());
+    }
+    match onto.get("entities") {
+        Some(Value::Array(a)) if !a.is_empty() => {}
+        Some(Value::Array(_)) => errors.push("ontology.entities 不能为空".into()),
+        _ => errors.push("ontology.entities 必须是数组".into()),
+    }
+    if let Some(actions) = onto.get("actions") {
+        if !actions.is_array() {
+            errors.push("ontology.actions 必须是数组".into());
+        }
+    }
+    let report = json!({
+        "root": root,
+        "namespace": namespace,
+        "valid": errors.is_empty(),
+        "errors": errors,
+    });
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&report).unwrap_or_default());
+    }
+    if errors.is_empty() {
+        Ok(format!("Ontology 校验通过：namespace={namespace}\n"))
+    } else {
+        let mut out = String::from("Ontology 校验失败\n");
+        for e in errors {
+            out.push_str(&format!("  ✗ {e}\n"));
+        }
+        Err(out)
+    }
+}
+
+pub fn rth_build_graph(dir: Option<&str>, json_out: bool) -> Result<String, String> {
+    let root = rth_root(dir)?;
+    let manifest = load_rth_manifest(&root)?;
+    let graph = manifest.get("build_graph").cloned().unwrap_or(json!({}));
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&graph).unwrap_or_default());
+    }
+    let nodes = graph.get("nodes").and_then(|x| x.as_array()).cloned().unwrap_or_default();
+    let edges = graph.get("edges").and_then(|x| x.as_array()).cloned().unwrap_or_default();
+    let mut out = String::from("Build graph\n  nodes:\n");
+    for n in nodes {
+        out.push_str(&format!("    • {}\n", n.as_str().unwrap_or(&n.to_string())));
+    }
+    out.push_str("  edges:\n");
+    if edges.is_empty() {
+        out.push_str("    (none)\n");
+    } else {
+        for e in edges {
+            out.push_str(&format!(
+                "    {} -> {} ({})\n",
+                e.get("from").and_then(|x| x.as_str()).unwrap_or("?"),
+                e.get("to").and_then(|x| x.as_str()).unwrap_or("?"),
+                e.get("type").and_then(|x| x.as_str()).unwrap_or("depends_on"),
+            ));
+        }
+    }
+    Ok(out)
+}
+
+// ---------------------------------------------------------------- RTH Platform
+
+pub fn rth_platform(client: &Client, json_out: bool) -> Result<String, String> {
+    let resp = client.get("/api/rth/platform")?;
+    if resp.status >= 400 {
+        return Err(resp.error_message());
+    }
+    let v = resp.json();
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+    }
+    let mut out = String::new();
+    out.push_str(&format!(
+        "RTH Platform · {}\n",
+        v.get("rth_core_version").and_then(|x| x.as_str()).unwrap_or("")
+    ));
+    if let Some(d) = v.get("definition").and_then(|x| x.as_str()) {
+        out.push_str(&format!("{d}\n\n"));
+    }
+    out.push_str("Runtime modes\n");
+    for m in v.get("modes").and_then(|x| x.as_array()).cloned().unwrap_or_default() {
+        out.push_str(&format!(
+            "  • {} ({}) — {}\n",
+            m.get("name").and_then(|x| x.as_str()).unwrap_or(""),
+            m.get("id").and_then(|x| x.as_str()).unwrap_or(""),
+            m.get("summary").and_then(|x| x.as_str()).unwrap_or("")
+        ));
+    }
+    out.push_str("\nPackage families\n");
+    for p in v.get("package_families").and_then(|x| x.as_array()).cloned().unwrap_or_default() {
+        out.push_str(&format!(
+            "  • {} [{}] — {}\n",
+            p.get("name").and_then(|x| x.as_str()).unwrap_or(""),
+            p.get("kind").and_then(|x| x.as_str()).unwrap_or(""),
+            p.get("description").and_then(|x| x.as_str()).unwrap_or("")
+        ));
+    }
+    if let Some(u) = v.get("release_url_template").and_then(|x| x.as_str()) {
+        out.push_str(&format!("\nRelease URL: {u}\n"));
+    }
+    Ok(out)
+}
+
+pub fn rth_releases(client: &Client, slug: &str, json_out: bool) -> Result<String, String> {
+    let resp = client.get(&format!("/api/rth/projects/{slug}/releases"))?;
+    if resp.status >= 400 {
+        return Err(resp.error_message());
+    }
+    let v = resp.json();
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+    }
+    let items = v.get("items").and_then(|x| x.as_array()).cloned().unwrap_or_default();
+    if items.is_empty() {
+        return Ok("没有 Release。\n".into());
+    }
+    let mut out = String::from("VERSION   CHANNEL   MODE          STATUS      PUBLISHED\n");
+    for r in items {
+        out.push_str(&format!(
+            "{:<9} {:<9} {:<13} {:<11} {}\n",
+            r.get("version").and_then(|x| x.as_str()).unwrap_or("-"),
+            r.get("channel").and_then(|x| x.as_str()).unwrap_or("-"),
+            r.get("mode").and_then(|x| x.as_str()).unwrap_or("-"),
+            r.get("status").and_then(|x| x.as_str()).unwrap_or("-"),
+            r.get("published_at").and_then(|x| x.as_str()).unwrap_or(""),
+        ));
+    }
+    Ok(out)
+}
+
+pub fn rth_release(client: &Client, slug: &str, version: &str, json_out: bool) -> Result<String, String> {
+    let resp = client.get(&format!("/api/rth/projects/{slug}/releases/{version}"))?;
+    if resp.status >= 400 {
+        return Err(resp.error_message());
+    }
+    let v = resp.json();
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+    }
+    let item = v.get("item").cloned().unwrap_or(json!({}));
+    let mut out = format!(
+        "{slug} · v{version}\n  status  : {}\n  channel : {}\n  mode    : {}\n",
+        item.get("status").and_then(|x| x.as_str()).unwrap_or("-"),
+        item.get("channel").and_then(|x| x.as_str()).unwrap_or("-"),
+        item.get("mode").and_then(|x| x.as_str()).unwrap_or("-"),
+    );
+    if let Some(n) = item.get("notes").and_then(|x| x.as_str()) {
+        if !n.is_empty() {
+            out.push_str(&format!("  notes   : {n}\n"));
+        }
+    }
+    if let Some(pkgs) = item.get("packages").and_then(|x| x.as_array()) {
+        out.push_str(&format!("\npackages ({})\n", pkgs.len()));
+        for p in pkgs {
+            out.push_str(&format!(
+                "  • [{}] {} v{} — {}\n",
+                p.get("kind").and_then(|x| x.as_str()).unwrap_or(""),
+                p.get("name").and_then(|x| x.as_str()).unwrap_or(""),
+                p.get("version").and_then(|x| x.as_str()).unwrap_or(""),
+                p.get("checksum").and_then(|x| x.as_str()).unwrap_or(""),
+            ));
+        }
+    }
+    if let Some(u) = v.pointer("/links/web").and_then(|x| x.as_str()) {
+        out.push_str(&format!("\nweb: {u}\n"));
+    }
+    Ok(out)
+}
+
+pub fn rth_release_create(
+    client: &Client,
+    slug: &str,
+    version: &str,
+    channel: &str,
+    mode: &str,
+    notes: &str,
+    publish: bool,
+) -> Result<String, String> {
+    let body = json!({
+        "version": version, "channel": channel, "mode": mode, "notes": notes, "publish": publish
+    });
+    let resp = client.post(&format!("/api/rth/projects/{slug}/releases"), &body)?;
+    if resp.status >= 400 {
+        return Err(resp.error_message());
+    }
+    let v = resp.json();
+    Ok(format!(
+        "Release v{} 已创建\n  status : {}\n  mode   : {}\n下一步：ratsa rth release {slug} {version}\n",
+        v.pointer("/item/version").and_then(|x| x.as_str()).unwrap_or(version),
+        v.pointer("/item/status").and_then(|x| x.as_str()).unwrap_or("-"),
+        v.pointer("/item/mode").and_then(|x| x.as_str()).unwrap_or(mode),
+    ))
+}
+
+pub fn rth_publish(client: &Client, slug: &str, version: &str) -> Result<String, String> {
+    let resp = client.post(
+        &format!("/api/rth/projects/{slug}/releases/{version}/publish"),
+        &json!({}),
+    )?;
+    if resp.status >= 400 {
+        return Err(resp.error_message());
+    }
+    let v = resp.json();
+    Ok(format!(
+        "Release v{version} 已发布（status={})\n",
+        v.pointer("/item/status").and_then(|x| x.as_str()).unwrap_or("-")
+    ))
 }

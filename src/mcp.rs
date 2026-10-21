@@ -134,6 +134,76 @@ fn tools() -> Vec<Value> {
             }
         }),
         json!({
+            "name": "ratsa_rth_platform",
+            "description": "读取官方 RTH Platform：运行方式（RTH Layer / RTH Application / HAL contribution）与 BSP / Suite / SDK / HAL / OS 包家族。",
+            "inputSchema": {"type": "object", "properties": {}, "additionalProperties": false}
+        }),
+        json!({
+            "name": "ratsa_list_rth_releases",
+            "description": "列出一个 RTH 项目的 Release（版本 / 通道 / 模式 / 状态）。",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"slug": str_prop("RTH 项目 slug")},
+                "required": ["slug"], "additionalProperties": false
+            }
+        }),
+        json!({
+            "name": "ratsa_read_rth_release",
+            "description": "读取一个 RTH Release 及其 Package、下载与验签地址。",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "slug": str_prop("RTH 项目 slug"),
+                    "version": str_prop("Release 版本（semver）")
+                },
+                "required": ["slug", "version"], "additionalProperties": false
+            }
+        }),
+        json!({
+            "name": "ratsa_rth_spec",
+            "description": "读取 RTH（Ratsa Runtime Harness）规范：RTHCore/服务面、能力、签名与准入流程、Use Cases。",
+            "inputSchema": {"type": "object", "properties": {}, "additionalProperties": false}
+        }),
+        json!({
+            "name": "ratsa_list_rth_projects",
+            "description": "列出公开 RTH 项目（RTHCore 版本、状态、Agentic 验证状态）。",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"q": str_prop("可选：名称 / 简介关键字")},
+                "additionalProperties": false
+            }
+        }),
+        json!({
+            "name": "ratsa_read_rth_project",
+            "description": "读取一个 RTH 项目：RTHCore 版本、签名公钥、Package、SOF/Lab 关联与 Agentic 验证结果。",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"slug": str_prop("RTH 项目 slug")},
+                "required": ["slug"], "additionalProperties": false
+            }
+        }),
+        json!({
+            "name": "ratsa_rth_channel",
+            "description": "读取 RATSA AI → RTH → 设备的签名通道描述（含已准入 Package 与验证入口）。",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"slug": str_prop("RTH 项目 slug")},
+                "required": ["slug"], "additionalProperties": false
+            }
+        }),
+        json!({
+            "name": "ratsa_verify_rth_package",
+            "description": "验证一个 RTH Package 的签名、校验和与准入状态。",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "slug": str_prop("RTH 项目 slug"),
+                    "package_id": {"type": "integer", "description": "Package ID"}
+                },
+                "required": ["slug", "package_id"], "additionalProperties": false
+            }
+        }),
+        json!({
             "name": "ratsa_list_sof_versions",
             "description": "列出某个 SOF 的版本历史（版本号、说明、时间、当前版本）。配合 version 参数可读取或拉取任意历史版本。",
             "inputSchema": {
@@ -486,6 +556,33 @@ fn run_tool(name: &str, args: &Value, client: &Client) -> Result<String, String>
             let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(20);
             let body = commands::list_sofs(client, &query, &category, limit as usize)?;
             Ok(body)
+        }
+        "ratsa_rth_platform" => commands::rth_platform(client, false),
+        "ratsa_list_rth_releases" => {
+            let slug = api::slug_or_url(&arg_str(args, "slug"));
+            commands::rth_releases(client, &slug, false)
+        }
+        "ratsa_read_rth_release" => {
+            let slug = api::slug_or_url(&arg_str(args, "slug"));
+            commands::rth_release(client, &slug, &arg_str(args, "version"), false)
+        }
+        "ratsa_rth_spec" => commands::rth_spec(client, false),
+        "ratsa_list_rth_projects" => commands::rth_projects(client, &arg_str(args, "q"), false),
+        "ratsa_read_rth_project" => {
+            let slug = api::slug_or_url(&arg_str(args, "slug"));
+            commands::rth_get(client, &slug, false)
+        }
+        "ratsa_rth_channel" => {
+            let slug = api::slug_or_url(&arg_str(args, "slug"));
+            commands::rth_channel(client, &slug, false)
+        }
+        "ratsa_verify_rth_package" => {
+            let slug = api::slug_or_url(&arg_str(args, "slug"));
+            let id = args
+                .get("package_id")
+                .and_then(|v| v.as_u64())
+                .ok_or_else(|| "缺少 package_id".to_string())?;
+            commands::rth_verify(client, &slug, id, false)
         }
         "ratsa_read_sof" => {
             let slug = api::slug_or_url(&arg_str(args, "slug"));

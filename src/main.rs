@@ -260,6 +260,11 @@ enum Command {
         #[command(subcommand)]
         action: LabAction,
     },
+    /// RTH（Ratsa Runtime Harness）：项目、服务通道与 Package 签名验证
+    Rth {
+        #[command(subcommand)]
+        action: RthAction,
+    },
     /// 以 MCP stdio 服务器方式运行（供 Agent 作为工具调用）
     Mcp,
     /// 从发布通道更新 `ratsa` 自身
@@ -268,6 +273,344 @@ enum Command {
     /// （见 npm/README.md 的版本策略）—— 于是只改二进制时，已安装的用户不会收到
     /// 更新。这是那条通道之外唯一的更新入口。
     Upgrade,
+}
+
+#[derive(Subcommand, Debug)]
+enum RthAction {
+    /// 打印 RTH 规范（Ratsa Runtime Harness）
+    Spec {
+        /// 输出原始 JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// 列出公开 RTH 项目
+    Projects {
+        /// 关键字（名称 / 简介）
+        #[arg(long)]
+        q: Option<String>,
+        /// 输出原始 JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// 读取一个 RTH 项目
+    Get {
+        /// RTH 项目 slug
+        slug: String,
+        /// 输出原始 JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// 读取服务 → RTH → 设备通道
+    Channel {
+        /// RTH 项目 slug
+        slug: String,
+        /// 输出原始 JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// 读取官方 RTH Platform（运行方式 / BSP / Suite / SDK / HAL / OS）
+    Platform {
+        /// 输出原始 JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// 列出一个项目的 Release
+    Releases {
+        /// RTH 项目 slug
+        slug: String,
+        /// 输出原始 JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// 读取一个 Release（版本 / 通道 / 模式 / 包）
+    Release {
+        /// RTH 项目 slug
+        slug: String,
+        /// Release 版本
+        version: String,
+        /// 输出原始 JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// 创建 Release（owner/admin；管理员可 --publish）
+    ReleaseCreate {
+        /// RTH 项目 slug
+        slug: String,
+        /// Release 版本（semver）
+        #[arg(long)]
+        version: String,
+        /// stable | beta | canary
+        #[arg(long, default_value = "stable")]
+        channel: String,
+        /// layer | application | os
+        #[arg(long, default_value = "layer")]
+        mode: String,
+        /// 发布说明
+        #[arg(long, default_value = "")]
+        notes: String,
+        /// 管理员直接发布
+        #[arg(long)]
+        publish: bool,
+    },
+    /// 平台管理员发布一个 Release
+    Publish {
+        /// RTH 项目 slug
+        slug: String,
+        /// Release 版本
+        version: String,
+    },
+    /// 验证一个 RTH Package 的签名与准入状态
+    Verify {
+        /// RTH 项目 slug
+        slug: String,
+        /// Package ID
+        package_id: u64,
+        /// 输出原始 JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// 在平台登记一个 RTH 项目（需登录）
+    Create {
+        /// 项目名称
+        #[arg(long)]
+        name: String,
+        /// 一句话介绍
+        #[arg(long, default_value = "")]
+        summary: String,
+        /// 项目说明
+        #[arg(long, default_value = "")]
+        description: String,
+        /// RTHCore 版本
+        #[arg(long, default_value = "")]
+        core_version: String,
+        /// 源码仓库
+        #[arg(long, default_value = "")]
+        repo: String,
+        /// 文档地址
+        #[arg(long, default_value = "")]
+        docs: String,
+        /// 关联 SOF slug
+        #[arg(long, default_value = "")]
+        sof: String,
+        /// 关联 Lab slug
+        #[arg(long, default_value = "")]
+        lab: String,
+        /// public | private
+        #[arg(long, default_value = "public")]
+        visibility: String,
+        /// 输出原始 JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// 登记一个 RTH Package（文件或元数据）
+    Package {
+        /// RTH 项目 slug
+        slug: String,
+        /// 包名称
+        #[arg(long)]
+        name: String,
+        /// 包版本
+        #[arg(long, default_value = "0.1.0")]
+        version: String,
+        /// rth-core | rth-plugin | bsp | suite | sdk | hal | os | kernel | layer | perception | ontology | mem | service | other
+        #[arg(long, default_value = "rth-plugin")]
+        kind: String,
+        /// 包文件（可选；省略时需 --checksum）
+        #[arg(long)]
+        file: Option<String>,
+        /// 无文件时的 sha256:<64 hex>
+        #[arg(long, default_value = "")]
+        checksum: String,
+        /// Metadata JSON
+        #[arg(long, default_value = "")]
+        metadata: String,
+        /// 包说明
+        #[arg(long, default_value = "")]
+        description: String,
+        /// 输出原始 JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// 用项目密钥为 Package 加签（需登录）
+    Sign {
+        /// RTH 项目 slug
+        slug: String,
+        /// Package ID
+        package_id: u64,
+        /// 输出原始 JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// 通过 SOF + Lab 验证 Agentic 能力（需登录）
+    Validate {
+        /// RTH 项目 slug
+        slug: String,
+        /// 输出原始 JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// 平台管理员准入一个已签名 Package
+    Admit {
+        /// RTH 项目 slug
+        slug: String,
+        /// Package ID
+        package_id: u64,
+        /// 准入备注
+        #[arg(long, default_value = "")]
+        note: String,
+    },
+    /// 平台管理员拒绝一个 Package
+    Reject {
+        /// RTH 项目 slug
+        slug: String,
+        /// Package ID
+        package_id: u64,
+        /// 拒绝备注
+        #[arg(long, default_value = "")]
+        note: String,
+    },
+    /// 在本地初始化一个 RTH 项目（ratsa.rth.json + .rth/ 状态目录）
+    Init {
+        /// 项目目录（默认当前目录）
+        #[arg(long)]
+        dir: Option<String>,
+        /// 项目名称（默认目录名）
+        #[arg(long)]
+        name: Option<String>,
+        /// RTHCore 版本
+        #[arg(long, default_value = "0.1.0")]
+        core_version: String,
+    },
+    /// 查看本地 RTH 运行时状态
+    Status {
+        /// 项目目录（默认向上查找 ratsa.rth.json）
+        #[arg(long)]
+        dir: Option<String>,
+        /// 输出原始 JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// 插件安装 / 更新 / 列表（写入 .rth/plugins.json）
+    Plugin {
+        #[command(subcommand)]
+        action: RthPluginAction,
+    },
+    /// 机器人 Mem（写入 .rth/mem.json）
+    Mem {
+        #[command(subcommand)]
+        action: RthMemAction,
+    },
+    /// 列出 RTH 清单中的感知部件
+    Perception {
+        /// 项目目录
+        #[arg(long)]
+        dir: Option<String>,
+        /// 输出原始 JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// 校验 RTH 清单中的 Ontology 定义
+    Ontology {
+        /// 项目目录
+        #[arg(long)]
+        dir: Option<String>,
+        /// 输出原始 JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// 打印清单中的构建关系（build graph）
+    BuildGraph {
+        /// 项目目录
+        #[arg(long)]
+        dir: Option<String>,
+        /// 输出原始 JSON
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum RthPluginAction {
+    /// 列出本地已安装插件
+    List {
+        #[arg(long)]
+        dir: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// 登记 / 安装一个插件
+    Add {
+        /// 插件 id
+        id: String,
+        #[arg(long, default_value = "")]
+        version: String,
+        /// rth-core | rth-plugin | bsp | suite | sdk | hal | os | kernel | layer | perception | ontology | mem
+        #[arg(long, default_value = "rth-plugin")]
+        kind: String,
+        #[arg(long, default_value = "")]
+        source: String,
+        #[arg(long, default_value = "stable")]
+        channel: String,
+        #[arg(long)]
+        dir: Option<String>,
+    },
+    /// 更新插件版本
+    Update {
+        /// 插件 id
+        id: String,
+        #[arg(long)]
+        version: String,
+        #[arg(long)]
+        dir: Option<String>,
+    },
+    /// 移除插件
+    Remove {
+        /// 插件 id
+        id: String,
+        #[arg(long)]
+        dir: Option<String>,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum RthMemAction {
+    /// 列出 Mem 键
+    List {
+        /// episodic | semantic | working
+        #[arg(long, default_value = "working")]
+        store: String,
+        #[arg(long)]
+        dir: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// 读取一个键
+    Get {
+        key: String,
+        #[arg(long, default_value = "working")]
+        store: String,
+        #[arg(long)]
+        dir: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// 写入一个键（值按 JSON 解析，失败则按字符串保存）
+    Set {
+        key: String,
+        value: String,
+        #[arg(long, default_value = "working")]
+        store: String,
+        #[arg(long)]
+        dir: Option<String>,
+    },
+    /// 删除一个键
+    Delete {
+        key: String,
+        #[arg(long, default_value = "working")]
+        store: String,
+        #[arg(long)]
+        dir: Option<String>,
+    },
 }
 
 #[derive(Args, Debug)]
@@ -847,6 +1190,90 @@ fn main() {
                 }
             };
             result.map(|s| print!("{s}"))
+        }
+        Command::Rth { action } => {
+            let client = api::Client::new(&cfg);
+            match action {
+                RthAction::Spec { json } => commands::rth_spec(&client, json).map(|s| print!("{s}")),
+                RthAction::Projects { q, json } => {
+                    commands::rth_projects(&client, q.as_deref().unwrap_or(""), json).map(|s| print!("{s}"))
+                }
+                RthAction::Get { slug, json } => {
+                    let slug = api::slug_or_url(&slug);
+                    commands::rth_get(&client, &slug, json).map(|s| print!("{s}"))
+                }
+                RthAction::Channel { slug, json } => {
+                    let slug = api::slug_or_url(&slug);
+                    commands::rth_channel(&client, &slug, json).map(|s| print!("{s}"))
+                }
+                RthAction::Platform { json } => commands::rth_platform(&client, json).map(|s| print!("{s}")),
+                RthAction::Releases { slug, json } => {
+                    let slug = api::slug_or_url(&slug);
+                    commands::rth_releases(&client, &slug, json).map(|s| print!("{s}"))
+                }
+                RthAction::Release { slug, version, json } => {
+                    let slug = api::slug_or_url(&slug);
+                    commands::rth_release(&client, &slug, &version, json).map(|s| print!("{s}"))
+                }
+                RthAction::ReleaseCreate { slug, version, channel, mode, notes, publish } => {
+                    let slug = api::slug_or_url(&slug);
+                    commands::rth_release_create(&client, &slug, &version, &channel, &mode, &notes, publish).map(|s| print!("{s}"))
+                }
+                RthAction::Publish { slug, version } => {
+                    let slug = api::slug_or_url(&slug);
+                    commands::rth_publish(&client, &slug, &version).map(|s| print!("{s}"))
+                }
+                RthAction::Verify { slug, package_id, json } => {
+                    let slug = api::slug_or_url(&slug);
+                    commands::rth_verify(&client, &slug, package_id, json).map(|s| print!("{s}"))
+                }
+                RthAction::Create { name, summary, description, core_version, repo, docs, sof, lab, visibility, json } => {
+                    commands::rth_create(&client, &name, &summary, &description, &core_version, &repo, &docs, &sof, &lab, &visibility, json).map(|s| print!("{s}"))
+                }
+                RthAction::Package { slug, name, version, kind, file, checksum, metadata, description, json } => {
+                    let slug = api::slug_or_url(&slug);
+                    commands::rth_package(&client, &slug, &name, &version, &kind, file.as_deref(), &checksum, &metadata, &description, json).map(|s| print!("{s}"))
+                }
+                RthAction::Sign { slug, package_id, json } => {
+                    let slug = api::slug_or_url(&slug);
+                    commands::rth_sign(&client, &slug, package_id, json).map(|s| print!("{s}"))
+                }
+                RthAction::Validate { slug, json } => {
+                    let slug = api::slug_or_url(&slug);
+                    commands::rth_validate(&client, &slug, json).map(|s| print!("{s}"))
+                }
+                RthAction::Admit { slug, package_id, note } => {
+                    let slug = api::slug_or_url(&slug);
+                    commands::rth_admit(&client, &slug, package_id, &note, false).map(|s| print!("{s}"))
+                }
+                RthAction::Reject { slug, package_id, note } => {
+                    let slug = api::slug_or_url(&slug);
+                    commands::rth_admit(&client, &slug, package_id, &note, true).map(|s| print!("{s}"))
+                }
+                RthAction::Init { dir, name, core_version } => {
+                    commands::rth_init(dir.as_deref(), name.as_deref(), &core_version).map(|s| print!("{s}"))
+                }
+                RthAction::Status { dir, json } => {
+                    commands::rth_status(dir.as_deref(), json).map(|s| print!("{s}"))
+                }
+                RthAction::Plugin { action } => match action {
+                    RthPluginAction::List { dir, json } => commands::rth_plugin_list(dir.as_deref(), json).map(|s| print!("{s}")),
+                    RthPluginAction::Add { id, version, kind, source, channel, dir } => {
+                        commands::rth_plugin_add(dir.as_deref(), &id, &version, &kind, &source, &channel).map(|s| print!("{s}"))
+                    }
+                    RthPluginAction::Update { id, version, dir } => commands::rth_plugin_update(dir.as_deref(), &id, &version).map(|s| print!("{s}")),
+                    RthPluginAction::Remove { id, dir } => commands::rth_plugin_remove(dir.as_deref(), &id).map(|s| print!("{s}")),
+                },
+                RthAction::Mem { action } => match action {
+                    RthMemAction::List { store, dir, json } => commands::rth_mem_list(dir.as_deref(), &store, json).map(|s| print!("{s}")),
+                    RthMemAction::Get { key, store, dir, json } => commands::rth_mem_get(dir.as_deref(), &store, &key, json).map(|s| print!("{s}")),
+                    RthMemAction::Set { key, value, store, dir } => commands::rth_mem_set(dir.as_deref(), &store, &key, &value).map(|s| print!("{s}")),
+                    RthMemAction::Delete { key, store, dir } => commands::rth_mem_delete(dir.as_deref(), &store, &key).map(|s| print!("{s}")),
+                },
+                RthAction::Perception { dir, json } => commands::rth_perception(dir.as_deref(), json).map(|s| print!("{s}")),
+                RthAction::Ontology { dir, json } => commands::rth_ontology(dir.as_deref(), json).map(|s| print!("{s}")),
+                RthAction::BuildGraph { dir, json } => commands::rth_build_graph(dir.as_deref(), json).map(|s| print!("{s}")),
+            }
         }
         Command::Mcp => mcp::serve(),
         Command::Upgrade => upgrade::run(),

@@ -107,9 +107,14 @@ unzip -o ~/.ratsa/packages/<slug>/device/*.zip -d ~/.ratsa/packages/<slug>/devic
 
 若宿主把 RATSA 注册成了 MCP server（`{{BIN}} mcp`），直接用这些工具，不必拼命令行：
 
-`ratsa_whoami` · `ratsa_scopes` · `ratsa_search_sofs` · `ratsa_read_sof` · `ratsa_list_sof_versions` · `ratsa_device_harness` · `ratsa_list_packages` · `ratsa_pull_package` · `ratsa_report_run` · `ratsa_submit_feedback`
+`ratsa_whoami` · `ratsa_scopes` · `ratsa_search_sofs` · `ratsa_read_sof` · `ratsa_list_sof_versions` · `ratsa_device_harness` · `ratsa_rth_spec` · `ratsa_list_rth_projects` · `ratsa_read_rth_project` · `ratsa_rth_channel` · `ratsa_verify_rth_package` · `ratsa_list_packages` · `ratsa_pull_package` · `ratsa_report_run` · `ratsa_submit_feedback`
 
 读取 / 拉取类工具（`ratsa_read_sof` / `ratsa_device_harness` / `ratsa_pull_package`）可传 `version` 指定历史版本。
+
+## RTH（Ratsa Runtime Harness）
+
+平台侧：`ratsa rth spec|projects|get|channel|verify|create|package|sign|validate|admit|reject`。
+运行在 RTH 本地：`ratsa rth init|status|plugin|mem|perception|ontology|build-graph`，读写项目内 `ratsa.rth.json` 与 `.rth/`；本地命令不依赖平台即可运行，联网后再登记 / 加签 / 同步。
 
 ## RATSA Lab（Cloud Lab，完全私有）
 

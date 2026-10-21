@@ -88,11 +88,13 @@ The MCP tool surface is exposed at the same time, so an Agent never has to memor
 | `manifest` / `packages` | Readiness + issue list + unified `packages[]` (`--version` to pin) |
 | `package` | **Generate the device Harness package server-side** and download it; `--meta` describes it only (files / readiness / size); `--version` pins a historical SOF version |
 | `sof-file` | Fetch the SOF file (`kind=ratsa.sof.json`, can be posted straight back to `POST /api/sof`); `--version` exports a historical version |
+| `rth` | RTH platform: `platform` / `spec` / `projects` / `get` / `channel` / `verify` / `create` / `package` / `sign` / `validate` / `admit` / `reject` / `releases` / `release` / `release-create` / `publish` |
+| `rth init/status/...` | Run **inside RTH**: `init` / `status` / `plugin` / `mem` / `perception` / `ontology` / `build-graph`, backed by `ratsa.rth.json` + `.rth/` |
 | `pull` | Pull any kind: `--kind device\|eval-repo\|service`, written to `~/.ratsa/packages/<slug>/<kind>/`; `--version` for device packages |
 | `kb` | Pull the SOF knowledge base: index by default, `--sof <slug>` for a device level, `--doc <key\|slug>` prints or saves the Markdown (checksum verified) |
 | `report` | Report a measured run (`source=agent`) into the device's Harness Eval |
 | `feedback` | Submit feedback to the vendor |
-| `mcp` | Run as an MCP stdio server (30 tools) |
+| `mcp` | Run as an MCP stdio server (38 tools) |
 | `upgrade` | Update the `ratsa` binary itself from the release channel |
 
 `upgrade` exists because the npm package version is independent of the CLI release tag
@@ -144,13 +146,15 @@ it reads, its publishes and submissions all belong to that account.
   needed for "vendor authorises a third party to hold a key under its identity" (see below).
 - Server side: `/api/v1/me` returns `acting_as`; the key list returns `bound_user`.
 
-## MCP tools (30)
+## MCP tools (38)
 
 `ratsa_whoami` · `ratsa_scopes` · `ratsa_search_sofs` · `ratsa_read_sof` ·
 `ratsa_list_sof_versions` · `ratsa_device_harness` · `ratsa_list_packages` · `ratsa_pull_package` ·
 `ratsa_list_agents` · `ratsa_generate_package` · `ratsa_get_sof_file` ·
 `ratsa_report_run` · `ratsa_submit_feedback` ·
-`ratsa_list_kb` · `ratsa_read_kb`
+`ratsa_list_kb` · `ratsa_read_kb` ·
+`ratsa_rth_spec` · `ratsa_rth_platform` · `ratsa_list_rth_projects` · `ratsa_read_rth_project` ·
+`ratsa_rth_channel` · `ratsa_verify_rth_package` · `ratsa_list_rth_releases` · `ratsa_read_rth_release`
 
 `ratsa_read_sof` / `ratsa_device_harness` / `ratsa_list_packages` / `ratsa_pull_package` /
 `ratsa_generate_package` / `ratsa_get_sof_file` accept an optional `version` to pin a historical

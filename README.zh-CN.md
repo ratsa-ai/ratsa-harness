@@ -81,11 +81,13 @@ MCP 工具面同时暴露，Agent 可以完全不用记命令。
 | `manifest` / `packages` | 就绪度 + 问题清单 + 统一 `packages[]`（`--version` 按版本读） |
 | `package` | **平台官方生成设备 Harness 包**并下载；`--meta` 只看描述（包内文件/就绪度/大小）；`--version` 按历史版本生成 |
 | `sof-file` | 拉取 SOF 文件（`kind=ratsa.sof.json`，可直接回灌 `POST /api/sof`）；`--version` 导出历史版本 |
+| `rth` | RTH 平台：`platform` / `spec` / `projects` / `get` / `channel` / `verify` / `create` / `package` / `sign` / `validate` / `admit` / `reject` / `releases` / `release` / `release-create` / `publish` |
+| `rth init/status/...` | **运行在 RTH 本地**：`init` / `status` / `plugin` / `mem` / `perception` / `ontology` / `build-graph`，读写 `ratsa.rth.json` + `.rth/` |
 | `pull` | 拉取任意 kind：`--kind device\|eval-repo\|service`，落盘 `~/.ratsa/packages/<slug>/<kind>/`；设备包支持 `--version` |
 | `kb` | 拉取 SOF 知识库：无参看索引，`--sof <slug>` 看设备分层，`--doc <key\|slug>` 打印/落盘 Markdown 原文（校验 checksum） |
 | `report` | 回传实测（`source=agent`），写入被测设备的 Harness Eval |
 | `feedback` | 提交反馈给厂商 |
-| `mcp` | 以 MCP stdio server 运行（30 个工具） |
+| `mcp` | 以 MCP stdio server 运行（38 个工具） |
 | `upgrade` | 从发布通道更新 `ratsa` 二进制自身 |
 
 `upgrade` 的存在原因：npm 包的版本号与 CLI 的 tag **相互独立**（见 `npm/README.zh-CN.md`），
@@ -132,13 +134,15 @@ key 能做什么**只**由权限表决定；默认集合是「读 + 拉取」，
   若需要「厂商授权第三方持有自己身份的 key」，需要一条**授权邀请**流程（见下）。
 - 平台侧解析：`/api/v1/me` 返回 `acting_as`；key 列表返回 `bound_user`。
 
-## MCP 工具（30 个）
+## MCP 工具（38 个）
 
 `ratsa_whoami` · `ratsa_scopes` · `ratsa_search_sofs` · `ratsa_read_sof` ·
 `ratsa_list_sof_versions` · `ratsa_device_harness` · `ratsa_list_packages` · `ratsa_pull_package` ·
 `ratsa_list_agents` · `ratsa_generate_package` · `ratsa_get_sof_file` ·
 `ratsa_report_run` · `ratsa_submit_feedback` ·
-`ratsa_list_kb` · `ratsa_read_kb`
+`ratsa_list_kb` · `ratsa_read_kb` ·
+`ratsa_rth_spec` · `ratsa_rth_platform` · `ratsa_list_rth_projects` · `ratsa_read_rth_project` ·
+`ratsa_rth_channel` · `ratsa_verify_rth_package` · `ratsa_list_rth_releases` · `ratsa_read_rth_release`
 
 `ratsa_read_sof` / `ratsa_device_harness` / `ratsa_list_packages` / `ratsa_pull_package` /
 `ratsa_generate_package` / `ratsa_get_sof_file` 支持可选 `version`，按历史版本读取或拉取。
