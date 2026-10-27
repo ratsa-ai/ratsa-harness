@@ -18,6 +18,7 @@
 mod api;
 mod commands;
 mod config;
+mod host_component;
 mod install;
 mod mcp;
 mod obs;
@@ -265,6 +266,11 @@ enum Command {
         #[command(subcommand)]
         action: RthAction,
     },
+    /// rth-host：登记 Host Server，并直连设备控制 / Harness Agent 行为
+    Host {
+        #[command(subcommand)]
+        action: HostAction,
+    },
     /// 以 MCP stdio 服务器方式运行（供 Agent 作为工具调用）
     Mcp,
     /// 从发布通道更新 `ratsa` 自身
@@ -273,6 +279,351 @@ enum Command {
     /// （见 npm/README.md 的版本策略）—— 于是只改二进制时，已安装的用户不会收到
     /// 更新。这是那条通道之外唯一的更新入口。
     Upgrade,
+}
+
+#[derive(Subcommand, Debug)]
+enum HostServiceAction {
+    /// 安装并启用服务（Linux systemd user / macOS LaunchAgent）
+    Install {
+        #[arg(long)]
+        config: Option<String>,
+        #[arg(long)]
+        bin: Option<String>,
+        /// 覆盖已有 unit / plist
+        #[arg(long)]
+        force: bool,
+        /// 只安装，不立即启动
+        #[arg(long)]
+        no_start: bool,
+        /// 只打印 unit / plist，不写入、不加载
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// 启动服务
+    Start {
+        #[arg(long)]
+        config: Option<String>,
+        #[arg(long)]
+        bin: Option<String>,
+    },
+    /// 停止服务
+    Stop,
+    /// 重启服务
+    Restart {
+        #[arg(long)]
+        config: Option<String>,
+        #[arg(long)]
+        bin: Option<String>,
+    },
+    /// 查看服务状态与 Host /health
+    Status {
+        #[arg(long)]
+        config: Option<String>,
+    },
+    /// 查看服务日志（journalctl / launchd 日志文件）
+    Logs {
+        #[arg(long, default_value_t = 200)]
+        lines: usize,
+        /// 持续跟随
+        #[arg(long)]
+        follow: bool,
+    },
+    /// 卸载服务（保留配置与日志）
+    Uninstall,
+}
+
+#[derive(Subcommand, Debug)]
+enum HostConfigAction {
+    /// 查看配置文件（默认 token 脱敏）
+    Show {
+        #[arg(long)]
+        config: Option<String>,
+        /// 显示明文 token
+        #[arg(long)]
+        reveal: bool,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum HostAction {
+    /// 生成 rthost 组件配置（token、rthd/rtm、profile、内存与 SOF API）
+    Init {
+        /// 配置文件（默认 ~/.ratsa/host/host.toml）
+        #[arg(long)]
+        config: Option<String>,
+        /// 覆盖已有配置
+        #[arg(long)]
+        force: bool,
+        /// 监听地址（默认 127.0.0.1:9780；绑到非 loopback 时必须设置 token）
+        #[arg(long, default_value = "127.0.0.1:9780")]
+        bind: String,
+        /// operator | full | mobile | monitor | custom
+        #[arg(long, default_value = "operator")]
+        profile: String,
+        /// custom profile 的能力（可重复，或逗号分隔）
+        #[arg(long = "capability")]
+        capabilities: Vec<String>,
+        /// rthd 地址
+        #[arg(long, default_value = "http://127.0.0.1:9770")]
+        rthd: String,
+        /// rthd token
+        #[arg(long)]
+        rthd_token: Option<String>,
+        /// rtm 地址
+        #[arg(long, default_value = "http://127.0.0.1:9771")]
+        rtm: String,
+        /// rtm token
+        #[arg(long)]
+        rtm_token: Option<String>,
+        /// Host token（不传则自动生成）
+        #[arg(long)]
+        token: Option<String>,
+        /// 本地 memory bundle 路径
+        #[arg(long)]
+        memory_store: Option<String>,
+        /// SOF API 声明文件（启用 /api/v1/harness/sof*）
+        #[arg(long)]
+        sof_api: Option<String>,
+        /// 允许 OTA 不带签名（默认拒绝）
+        #[arg(long)]
+        no_ota_signature: bool,
+        /// 输出原始 JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// 安装 rthost 组件（复制到 ~/.ratsa/bin/rthost，或从 rthcore 源码构建）
+    Install {
+        /// 已有 rthost 二进制路径
+        #[arg(long)]
+        bin: Option<String>,
+        /// rthcore 工作区目录（执行 cargo build --release -p rthost）
+        #[arg(long = "from-source")]
+        from_source: Option<String>,
+        /// 覆盖已安装的组件
+        #[arg(long)]
+        force: bool,
+    },
+    /// 前台运行 rthost 组件
+    Run {
+        /// 配置文件（默认 ~/.ratsa/host/host.toml）
+        #[arg(long)]
+        config: Option<String>,
+        /// rthost 二进制（默认 RTHOST_BIN / ~/.ratsa/bin/rthost / PATH）
+        #[arg(long)]
+        bin: Option<String>,
+    },
+    /// 检查配置、组件、Host /health、rthd / rtm
+    Doctor {
+        #[arg(long)]
+        config: Option<String>,
+        #[arg(long)]
+        bin: Option<String>,
+    },
+    /// 安装 / 启停 systemd（Linux）或 launchd（macOS）服务
+    Service {
+        #[command(subcommand)]
+        action: HostServiceAction,
+    },
+    /// 查看本地 rthost 配置（默认脱敏）
+    Config {
+        #[command(subcommand)]
+        action: HostConfigAction,
+    },
+    /// 把本机 rthost 组件登记到平台（URL + 能力；token 不落平台）
+    Publish {
+        /// Host 名称（账号内唯一）
+        #[arg(long)]
+        name: String,
+        /// 配置文件（默认 ~/.ratsa/host/host.toml）
+        #[arg(long)]
+        config: Option<String>,
+        /// 外部可访问地址（默认取配置 bind；通配地址必须显式指定）
+        #[arg(long)]
+        url: Option<String>,
+        #[arg(long, default_value = "")]
+        description: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// 登记一个 rth-host Server（只存地址与能力，token 不落平台）
+    Add {
+        /// 名称（账号内唯一）
+        #[arg(long)]
+        name: String,
+        /// Host Server 地址，如 https://robot.example.com:8787
+        #[arg(long)]
+        url: String,
+        /// 说明
+        #[arg(long, default_value = "")]
+        description: String,
+        /// 能力（逗号分隔；默认 read_state）
+        #[arg(long, default_value = "read_state")]
+        capabilities: String,
+        /// 输出原始 JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// 列出已登记的 Host
+    List {
+        /// 输出原始 JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// 读取一个已登记的 Host
+    Get {
+        /// Host id
+        id: u64,
+        /// 输出原始 JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// 更新已登记的 Host（只传要改的字段）
+    Update {
+        /// Host id
+        id: u64,
+        /// 新名称
+        #[arg(long)]
+        name: Option<String>,
+        /// 新地址
+        #[arg(long)]
+        url: Option<String>,
+        /// 新说明（传空字符串可清空）
+        #[arg(long)]
+        description: Option<String>,
+        /// 新能力（逗号分隔）
+        #[arg(long)]
+        capabilities: Option<String>,
+        /// 输出原始 JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// 删除一个已登记的 Host（不会影响 Host Server 本身）
+    Remove {
+        /// Host id
+        id: u64,
+    },
+    /// 直连 Host 读取状态
+    Status {
+        /// Host id、名称或完整 URL
+        #[arg(long)]
+        host: String,
+        /// Host Bearer token（或用 RTH_HOST_TOKEN）
+        #[arg(long, env = "RTH_HOST_TOKEN", hide_env_values = true)]
+        token: Option<String>,
+        /// 输出原始 JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// 直连 Host 列出程序
+    Programs {
+        #[arg(long)]
+        host: String,
+        #[arg(long, env = "RTH_HOST_TOKEN", hide_env_values = true)]
+        token: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// 直连 Host 启动 / 停止 / 重启程序
+    Program {
+        /// Host id、名称或完整 URL
+        #[arg(long)]
+        host: String,
+        /// 程序名
+        #[arg(long)]
+        name: String,
+        /// start | stop | restart
+        #[arg(long, default_value = "restart")]
+        action: String,
+        #[arg(long, env = "RTH_HOST_TOKEN", hide_env_values = true)]
+        token: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// 直连 Host 读取事件
+    Events {
+        #[arg(long)]
+        host: String,
+        #[arg(long, default_value_t = 100)]
+        limit: usize,
+        #[arg(long, env = "RTH_HOST_TOKEN", hide_env_values = true)]
+        token: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// 直连 Host 读取信号记录
+    Signals {
+        #[arg(long)]
+        host: String,
+        #[arg(long, default_value_t = 100)]
+        limit: usize,
+        #[arg(long, env = "RTH_HOST_TOKEN", hide_env_values = true)]
+        token: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// 直连 Host 提交一个信号（原始 SignalRequest JSON）
+    Signal {
+        #[arg(long)]
+        host: String,
+        /// JSON，例如 {"type":"restart","program":"vision"} 或 @signal.json
+        #[arg(long)]
+        payload: String,
+        #[arg(long, env = "RTH_HOST_TOKEN", hide_env_values = true)]
+        token: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// 直连 Host 读取 Harness 状态
+    Harness {
+        #[arg(long)]
+        host: String,
+        #[arg(long, env = "RTH_HOST_TOKEN", hide_env_values = true)]
+        token: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// 直连 Host 向 Harness Agent 下发指令
+    Agent {
+        #[arg(long)]
+        host: String,
+        /// 指令文本
+        #[arg(long)]
+        text: String,
+        /// 指令来源（默认 ratsa-cli）
+        #[arg(long, default_value = "ratsa-cli")]
+        source: String,
+        /// 可选意图标签
+        #[arg(long)]
+        intent: Option<String>,
+        #[arg(long, env = "RTH_HOST_TOKEN", hide_env_values = true)]
+        token: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// 直连 Host 触发 Harness 事件
+    Event {
+        #[arg(long)]
+        host: String,
+        /// 事件名（如 task_started / obstacle）
+        #[arg(long)]
+        event: String,
+        /// 原因 / 备注
+        #[arg(long)]
+        reason: Option<String>,
+        #[arg(long, env = "RTH_HOST_TOKEN", hide_env_values = true)]
+        token: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// 直连 Host 推进一次 Harness tick
+    Tick {
+        #[arg(long)]
+        host: String,
+        #[arg(long, env = "RTH_HOST_TOKEN", hide_env_values = true)]
+        token: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -380,9 +731,9 @@ enum RthAction {
         /// 项目说明
         #[arg(long, default_value = "")]
         description: String,
-        /// RTHCore 版本
-        #[arg(long, default_value = "")]
-        core_version: String,
+        /// RTHLoop 版本
+        #[arg(long, alias = "core-version", default_value = "")]
+        loop_version: String,
         /// 源码仓库
         #[arg(long, default_value = "")]
         repo: String,
@@ -412,7 +763,7 @@ enum RthAction {
         /// 包版本
         #[arg(long, default_value = "0.1.0")]
         version: String,
-        /// rth-core | rth-plugin | bsp | suite | sdk | hal | os | kernel | layer | perception | ontology | mem | service | other
+        /// rth-loop | rth-plugin | bsp | suite | sdk | hal | os | kernel | layer | perception | ontology | mem | service | other
         #[arg(long, default_value = "rth-plugin")]
         kind: String,
         /// 包文件（可选；省略时需 --checksum）
@@ -477,9 +828,9 @@ enum RthAction {
         /// 项目名称（默认目录名）
         #[arg(long)]
         name: Option<String>,
-        /// RTHCore 版本
-        #[arg(long, default_value = "0.1.0")]
-        core_version: String,
+        /// RTHLoop 版本
+        #[arg(long, alias = "core-version", default_value = "0.1.0")]
+        loop_version: String,
     },
     /// 查看本地 RTH 运行时状态
     Status {
@@ -527,6 +878,120 @@ enum RthAction {
         #[arg(long)]
         json: bool,
     },
+    /// 列出我的 RTH 资产（插件 / SDK / 包）
+    Assets {
+        /// 按状态过滤：uploaded | certified | revoked
+        #[arg(long)]
+        status: Option<String>,
+        /// 按类型过滤：rth-plugin | sdk | rth-loop | …
+        #[arg(long)]
+        kind: Option<String>,
+        /// 输出原始 JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// 上传一个 RTH 资产（文件可选；元数据资产需 --checksum）
+    AssetUpload {
+        /// 资产名称
+        #[arg(long)]
+        name: String,
+        /// 版本（semver，如 1.2.0）
+        #[arg(long, default_value = "0.1.0")]
+        version: String,
+        /// rth-plugin | sdk | rth-loop | bsp | suite | hal | os | kernel | layer | perception | ontology | mem | service | other
+        #[arg(long, default_value = "other")]
+        kind: String,
+        /// 插件 / SDK / 包文件（zip、tar.gz 等）
+        #[arg(long)]
+        file: Option<String>,
+        /// 说明
+        #[arg(long, default_value = "")]
+        description: String,
+        /// Metadata JSON（或 @file.json）
+        #[arg(long, default_value = "")]
+        metadata: String,
+        /// RTH manifest JSON 文件
+        #[arg(long)]
+        manifest: Option<String>,
+        /// 元数据资产的 sha256:<64 hex> 校验和
+        #[arg(long, default_value = "")]
+        checksum: String,
+        /// 源码仓库地址
+        #[arg(long, default_value = "")]
+        repo: String,
+        /// 许可证（如 MIT / Apache-2.0）
+        #[arg(long, default_value = "")]
+        license: String,
+        /// Ed25519 签名（base64 或 ed25519:<base64>；或 @file）
+        #[arg(long, default_value = "")]
+        signature: String,
+        /// Ed25519 签名公钥（base64；或 @file）
+        #[arg(long = "signature-key", default_value = "")]
+        signature_key: String,
+        /// 可见性：public | customer | private
+        #[arg(long, default_value = "public")]
+        visibility: String,
+        /// 输出原始 JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// 读取一个 RTH 资产及其认证检查
+    Asset {
+        /// 资产 id
+        id: u64,
+        /// 输出原始 JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// 重新执行资产的自动认证检查
+    AssetCertify {
+        /// 资产 id
+        id: u64,
+        /// 输出原始 JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// 修改资产的说明 / 仓库 / 许可证 / 可见性
+    AssetUpdate {
+        /// 资产 id
+        id: u64,
+        /// 新说明
+        #[arg(long)]
+        description: Option<String>,
+        /// 新仓库地址
+        #[arg(long)]
+        repo: Option<String>,
+        /// 新许可证
+        #[arg(long)]
+        license: Option<String>,
+        /// public | customer | private
+        #[arg(long)]
+        visibility: Option<String>,
+        /// 输出原始 JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// 删除一个 RTH 资产
+    AssetDelete {
+        /// 资产 id
+        id: u64,
+    },
+    /// 下载一个 RTH 资产并校验 sha256
+    AssetDownload {
+        /// 资产 id
+        id: u64,
+        /// 输出文件或目录（默认当前目录）
+        #[arg(long, default_value = ".")]
+        out: String,
+    },
+    /// 管理员撤销一个 RTH 资产
+    AssetRevoke {
+        /// 资产 id
+        id: u64,
+        /// 撤销原因
+        #[arg(long, default_value = "")]
+        note: String,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -544,7 +1009,7 @@ enum RthPluginAction {
         id: String,
         #[arg(long, default_value = "")]
         version: String,
-        /// rth-core | rth-plugin | bsp | suite | sdk | hal | os | kernel | layer | perception | ontology | mem
+        /// rth-loop | rth-plugin | bsp | suite | sdk | hal | os | kernel | layer | perception | ontology | mem
         #[arg(long, default_value = "rth-plugin")]
         kind: String,
         #[arg(long, default_value = "")]
@@ -998,17 +1463,28 @@ fn main() {
             limit,
             json,
         } => run_search(&cfg, query, category, limit, json),
-        Command::Sof { slug, version, json } => {
-            run_sof(&cfg, &slug, version.as_deref().unwrap_or(""), json)
-        }
+        Command::Sof {
+            slug,
+            version,
+            json,
+        } => run_sof(&cfg, &slug, version.as_deref().unwrap_or(""), json),
         Command::Versions { slug, json } => run_versions(&cfg, &slug, json),
-        Command::Manifest { slug, version, json } => {
-            run_manifest(&cfg, &slug, version.as_deref().unwrap_or(""), json)
-        }
-        Command::Packages { slug, version, json } => {
-            run_packages(&cfg, &slug, version.as_deref().unwrap_or(""), json)
-        }
-        Command::Pull { slug, kind, version, out } => {
+        Command::Manifest {
+            slug,
+            version,
+            json,
+        } => run_manifest(&cfg, &slug, version.as_deref().unwrap_or(""), json),
+        Command::Packages {
+            slug,
+            version,
+            json,
+        } => run_packages(&cfg, &slug, version.as_deref().unwrap_or(""), json),
+        Command::Pull {
+            slug,
+            kind,
+            version,
+            out,
+        } => {
             let client = api::Client::new(&cfg);
             let slug = api::slug_or_url(&slug);
             let out = out.unwrap_or_default();
@@ -1021,41 +1497,51 @@ fn main() {
             )
             .map(|s| print!("{s}"))
         }
-        Command::Package { slug, version, meta, out } => {
+        Command::Package {
+            slug,
+            version,
+            meta,
+            out,
+        } => {
             let client = api::Client::new(&cfg);
             let slug = api::slug_or_url(&slug);
             let out = out.unwrap_or_default();
-            commands::package_cmd(
-                &client,
-                &slug,
-                version.as_deref().unwrap_or(""),
-                meta,
-                &out,
-            )
-            .map(|s| print!("{s}"))
+            commands::package_cmd(&client, &slug, version.as_deref().unwrap_or(""), meta, &out)
+                .map(|s| print!("{s}"))
         }
         Command::SofFile { slug, version, out } => {
             let client = api::Client::new(&cfg);
             let slug = api::slug_or_url(&slug);
             let out = out.unwrap_or_default();
-            commands::sof_file_cmd(
-                &client,
-                &slug,
-                version.as_deref().unwrap_or(""),
-                &out,
-            )
-            .map(|s| print!("{s}"))
-        }
-        Command::SofPush { file, slug, dry_run } => {
-            let client = api::Client::new(&cfg);
-            commands::sof_push_cmd(&client, &file, slug.as_deref(), dry_run)
+            commands::sof_file_cmd(&client, &slug, version.as_deref().unwrap_or(""), &out)
                 .map(|s| print!("{s}"))
         }
-        Command::SofUpload { slug, paths, from_assets, r#type, dry_run, json } => {
+        Command::SofPush {
+            file,
+            slug,
+            dry_run,
+        } => {
+            let client = api::Client::new(&cfg);
+            commands::sof_push_cmd(&client, &file, slug.as_deref(), dry_run).map(|s| print!("{s}"))
+        }
+        Command::SofUpload {
+            slug,
+            paths,
+            from_assets,
+            r#type,
+            dry_run,
+            json,
+        } => {
             let client = api::Client::new(&cfg);
             let slug = api::slug_or_url(&slug);
             commands::sof_upload_cmd(
-                &client, &slug, &paths, from_assets, r#type.as_deref(), dry_run, json,
+                &client,
+                &slug,
+                &paths,
+                from_assets,
+                r#type.as_deref(),
+                dry_run,
+                json,
             )
             .map(|s| print!("{s}"))
         }
@@ -1098,7 +1584,9 @@ fn main() {
             let tfilter = r#type.unwrap_or_default();
             let out = out.unwrap_or_default();
             match doc {
-                Some(d) => commands::kb_read(&client, &sof, &tfilter, &d, &out).map(|s| print!("{s}")),
+                Some(d) => {
+                    commands::kb_read(&client, &sof, &tfilter, &d, &out).map(|s| print!("{s}"))
+                }
                 None => commands::kb_index(&client, &sof, &tfilter, json).map(|s| print!("{s}")),
             }
         }
@@ -1136,9 +1624,7 @@ fn main() {
                 LabAction::DeviceRemove { slug, id } => {
                     commands::lab_device_remove(&client, &slug, id)
                 }
-                LabAction::Feedback { slug, json } => {
-                    commands::lab_feedback(&client, &slug, json)
-                }
+                LabAction::Feedback { slug, json } => commands::lab_feedback(&client, &slug, json),
                 LabAction::FeedbackAdd {
                     slug,
                     customer,
@@ -1156,8 +1642,8 @@ fn main() {
                     consent,
                     json,
                 } => commands::lab_feedback_add(
-                    &client, &slug, &customer, &company, &contact, service, &order_ref,
-                    amount, &currency, rating, &category, &title, &detail, &date, consent, json,
+                    &client, &slug, &customer, &company, &contact, service, &order_ref, amount,
+                    &currency, rating, &category, &title, &detail, &date, consent, json,
                 ),
                 LabAction::FeedbackSummary { slug, json } => {
                     commands::lab_feedback_summary(&client, &slug, json)
@@ -1194,9 +1680,12 @@ fn main() {
         Command::Rth { action } => {
             let client = api::Client::new(&cfg);
             match action {
-                RthAction::Spec { json } => commands::rth_spec(&client, json).map(|s| print!("{s}")),
+                RthAction::Spec { json } => {
+                    commands::rth_spec(&client, json).map(|s| print!("{s}"))
+                }
                 RthAction::Projects { q, json } => {
-                    commands::rth_projects(&client, q.as_deref().unwrap_or(""), json).map(|s| print!("{s}"))
+                    commands::rth_projects(&client, q.as_deref().unwrap_or(""), json)
+                        .map(|s| print!("{s}"))
                 }
                 RthAction::Get { slug, json } => {
                     let slug = api::slug_or_url(&slug);
@@ -1206,35 +1695,103 @@ fn main() {
                     let slug = api::slug_or_url(&slug);
                     commands::rth_channel(&client, &slug, json).map(|s| print!("{s}"))
                 }
-                RthAction::Platform { json } => commands::rth_platform(&client, json).map(|s| print!("{s}")),
+                RthAction::Platform { json } => {
+                    commands::rth_platform(&client, json).map(|s| print!("{s}"))
+                }
                 RthAction::Releases { slug, json } => {
                     let slug = api::slug_or_url(&slug);
                     commands::rth_releases(&client, &slug, json).map(|s| print!("{s}"))
                 }
-                RthAction::Release { slug, version, json } => {
+                RthAction::Release {
+                    slug,
+                    version,
+                    json,
+                } => {
                     let slug = api::slug_or_url(&slug);
                     commands::rth_release(&client, &slug, &version, json).map(|s| print!("{s}"))
                 }
-                RthAction::ReleaseCreate { slug, version, channel, mode, notes, publish } => {
+                RthAction::ReleaseCreate {
+                    slug,
+                    version,
+                    channel,
+                    mode,
+                    notes,
+                    publish,
+                } => {
                     let slug = api::slug_or_url(&slug);
-                    commands::rth_release_create(&client, &slug, &version, &channel, &mode, &notes, publish).map(|s| print!("{s}"))
+                    commands::rth_release_create(
+                        &client, &slug, &version, &channel, &mode, &notes, publish,
+                    )
+                    .map(|s| print!("{s}"))
                 }
                 RthAction::Publish { slug, version } => {
                     let slug = api::slug_or_url(&slug);
                     commands::rth_publish(&client, &slug, &version).map(|s| print!("{s}"))
                 }
-                RthAction::Verify { slug, package_id, json } => {
+                RthAction::Verify {
+                    slug,
+                    package_id,
+                    json,
+                } => {
                     let slug = api::slug_or_url(&slug);
                     commands::rth_verify(&client, &slug, package_id, json).map(|s| print!("{s}"))
                 }
-                RthAction::Create { name, summary, description, core_version, repo, docs, sof, lab, visibility, json } => {
-                    commands::rth_create(&client, &name, &summary, &description, &core_version, &repo, &docs, &sof, &lab, &visibility, json).map(|s| print!("{s}"))
-                }
-                RthAction::Package { slug, name, version, kind, file, checksum, metadata, description, json } => {
+                RthAction::Create {
+                    name,
+                    summary,
+                    description,
+                    loop_version,
+                    repo,
+                    docs,
+                    sof,
+                    lab,
+                    visibility,
+                    json,
+                } => commands::rth_create(
+                    &client,
+                    &name,
+                    &summary,
+                    &description,
+                    &loop_version,
+                    &repo,
+                    &docs,
+                    &sof,
+                    &lab,
+                    &visibility,
+                    json,
+                )
+                .map(|s| print!("{s}")),
+                RthAction::Package {
+                    slug,
+                    name,
+                    version,
+                    kind,
+                    file,
+                    checksum,
+                    metadata,
+                    description,
+                    json,
+                } => {
                     let slug = api::slug_or_url(&slug);
-                    commands::rth_package(&client, &slug, &name, &version, &kind, file.as_deref(), &checksum, &metadata, &description, json).map(|s| print!("{s}"))
+                    commands::rth_package(
+                        &client,
+                        &slug,
+                        &name,
+                        &version,
+                        &kind,
+                        file.as_deref(),
+                        &checksum,
+                        &metadata,
+                        &description,
+                        json,
+                    )
+                    .map(|s| print!("{s}"))
                 }
-                RthAction::Sign { slug, package_id, json } => {
+                RthAction::Sign {
+                    slug,
+                    package_id,
+                    json,
+                } => {
                     let slug = api::slug_or_url(&slug);
                     commands::rth_sign(&client, &slug, package_id, json).map(|s| print!("{s}"))
                 }
@@ -1242,38 +1799,357 @@ fn main() {
                     let slug = api::slug_or_url(&slug);
                     commands::rth_validate(&client, &slug, json).map(|s| print!("{s}"))
                 }
-                RthAction::Admit { slug, package_id, note } => {
+                RthAction::Admit {
+                    slug,
+                    package_id,
+                    note,
+                } => {
                     let slug = api::slug_or_url(&slug);
-                    commands::rth_admit(&client, &slug, package_id, &note, false).map(|s| print!("{s}"))
+                    commands::rth_admit(&client, &slug, package_id, &note, false)
+                        .map(|s| print!("{s}"))
                 }
-                RthAction::Reject { slug, package_id, note } => {
+                RthAction::Reject {
+                    slug,
+                    package_id,
+                    note,
+                } => {
                     let slug = api::slug_or_url(&slug);
-                    commands::rth_admit(&client, &slug, package_id, &note, true).map(|s| print!("{s}"))
+                    commands::rth_admit(&client, &slug, package_id, &note, true)
+                        .map(|s| print!("{s}"))
                 }
-                RthAction::Init { dir, name, core_version } => {
-                    commands::rth_init(dir.as_deref(), name.as_deref(), &core_version).map(|s| print!("{s}"))
-                }
+                RthAction::Init {
+                    dir,
+                    name,
+                    loop_version,
+                } => commands::rth_init(dir.as_deref(), name.as_deref(), &loop_version)
+                    .map(|s| print!("{s}")),
                 RthAction::Status { dir, json } => {
                     commands::rth_status(dir.as_deref(), json).map(|s| print!("{s}"))
                 }
                 RthAction::Plugin { action } => match action {
-                    RthPluginAction::List { dir, json } => commands::rth_plugin_list(dir.as_deref(), json).map(|s| print!("{s}")),
-                    RthPluginAction::Add { id, version, kind, source, channel, dir } => {
-                        commands::rth_plugin_add(dir.as_deref(), &id, &version, &kind, &source, &channel).map(|s| print!("{s}"))
+                    RthPluginAction::List { dir, json } => {
+                        commands::rth_plugin_list(dir.as_deref(), json).map(|s| print!("{s}"))
                     }
-                    RthPluginAction::Update { id, version, dir } => commands::rth_plugin_update(dir.as_deref(), &id, &version).map(|s| print!("{s}")),
-                    RthPluginAction::Remove { id, dir } => commands::rth_plugin_remove(dir.as_deref(), &id).map(|s| print!("{s}")),
+                    RthPluginAction::Add {
+                        id,
+                        version,
+                        kind,
+                        source,
+                        channel,
+                        dir,
+                    } => commands::rth_plugin_add(
+                        dir.as_deref(),
+                        &id,
+                        &version,
+                        &kind,
+                        &source,
+                        &channel,
+                    )
+                    .map(|s| print!("{s}")),
+                    RthPluginAction::Update { id, version, dir } => {
+                        commands::rth_plugin_update(dir.as_deref(), &id, &version)
+                            .map(|s| print!("{s}"))
+                    }
+                    RthPluginAction::Remove { id, dir } => {
+                        commands::rth_plugin_remove(dir.as_deref(), &id).map(|s| print!("{s}"))
+                    }
                 },
                 RthAction::Mem { action } => match action {
-                    RthMemAction::List { store, dir, json } => commands::rth_mem_list(dir.as_deref(), &store, json).map(|s| print!("{s}")),
-                    RthMemAction::Get { key, store, dir, json } => commands::rth_mem_get(dir.as_deref(), &store, &key, json).map(|s| print!("{s}")),
-                    RthMemAction::Set { key, value, store, dir } => commands::rth_mem_set(dir.as_deref(), &store, &key, &value).map(|s| print!("{s}")),
-                    RthMemAction::Delete { key, store, dir } => commands::rth_mem_delete(dir.as_deref(), &store, &key).map(|s| print!("{s}")),
+                    RthMemAction::List { store, dir, json } => {
+                        commands::rth_mem_list(dir.as_deref(), &store, json).map(|s| print!("{s}"))
+                    }
+                    RthMemAction::Get {
+                        key,
+                        store,
+                        dir,
+                        json,
+                    } => commands::rth_mem_get(dir.as_deref(), &store, &key, json)
+                        .map(|s| print!("{s}")),
+                    RthMemAction::Set {
+                        key,
+                        value,
+                        store,
+                        dir,
+                    } => commands::rth_mem_set(dir.as_deref(), &store, &key, &value)
+                        .map(|s| print!("{s}")),
+                    RthMemAction::Delete { key, store, dir } => {
+                        commands::rth_mem_delete(dir.as_deref(), &store, &key)
+                            .map(|s| print!("{s}"))
+                    }
                 },
-                RthAction::Perception { dir, json } => commands::rth_perception(dir.as_deref(), json).map(|s| print!("{s}")),
-                RthAction::Ontology { dir, json } => commands::rth_ontology(dir.as_deref(), json).map(|s| print!("{s}")),
-                RthAction::BuildGraph { dir, json } => commands::rth_build_graph(dir.as_deref(), json).map(|s| print!("{s}")),
+                RthAction::Perception { dir, json } => {
+                    commands::rth_perception(dir.as_deref(), json).map(|s| print!("{s}"))
+                }
+                RthAction::Ontology { dir, json } => {
+                    commands::rth_ontology(dir.as_deref(), json).map(|s| print!("{s}"))
+                }
+                RthAction::BuildGraph { dir, json } => {
+                    commands::rth_build_graph(dir.as_deref(), json).map(|s| print!("{s}"))
+                }
+                RthAction::Assets { status, kind, json } => {
+                    commands::rth_assets(&client, status.as_deref(), kind.as_deref(), json)
+                        .map(|s| print!("{s}"))
+                }
+                RthAction::AssetUpload {
+                    name,
+                    version,
+                    kind,
+                    file,
+                    description,
+                    metadata,
+                    manifest,
+                    checksum,
+                    repo,
+                    license,
+                    signature,
+                    signature_key,
+                    visibility,
+                    json,
+                } => commands::rth_asset_upload(
+                    &client,
+                    &name,
+                    &version,
+                    &kind,
+                    file.as_deref(),
+                    &description,
+                    &metadata,
+                    manifest.as_deref(),
+                    &checksum,
+                    &repo,
+                    &license,
+                    &signature,
+                    &signature_key,
+                    &visibility,
+                    json,
+                )
+                .map(|s| print!("{s}")),
+                RthAction::Asset { id, json } => {
+                    commands::rth_asset(&client, id, json).map(|s| print!("{s}"))
+                }
+                RthAction::AssetCertify { id, json } => {
+                    commands::rth_asset_certify(&client, id, json).map(|s| print!("{s}"))
+                }
+                RthAction::AssetUpdate {
+                    id,
+                    description,
+                    repo,
+                    license,
+                    visibility,
+                    json,
+                } => commands::rth_asset_update(
+                    &client,
+                    id,
+                    description.as_deref(),
+                    repo.as_deref(),
+                    license.as_deref(),
+                    visibility.as_deref(),
+                    json,
+                )
+                .map(|s| print!("{s}")),
+                RthAction::AssetDelete { id } => {
+                    commands::rth_asset_delete(&client, id).map(|s| print!("{s}"))
+                }
+                RthAction::AssetDownload { id, out } => {
+                    commands::rth_asset_download(&client, id, &out).map(|s| print!("{s}"))
+                }
+                RthAction::AssetRevoke { id, note } => {
+                    commands::rth_asset_revoke(&client, id, &note).map(|s| print!("{s}"))
+                }
             }
+        }
+        Command::Host { action } => {
+            let client = api::Client::new(&cfg);
+            let result = match action {
+                HostAction::Init {
+                    config,
+                    force,
+                    bind,
+                    profile,
+                    capabilities,
+                    rthd,
+                    rthd_token,
+                    rtm,
+                    rtm_token,
+                    token,
+                    memory_store,
+                    sof_api,
+                    no_ota_signature,
+                    json,
+                } => host_component::init(host_component::InitOptions {
+                    config,
+                    force,
+                    bind,
+                    profile,
+                    capabilities: capabilities
+                        .iter()
+                        .flat_map(|c| c.split(','))
+                        .map(|c| c.trim().to_string())
+                        .filter(|c| !c.is_empty())
+                        .collect(),
+                    rthd,
+                    rthd_token,
+                    rtm,
+                    rtm_token,
+                    token,
+                    memory_store,
+                    sof_api,
+                    no_ota_signature,
+                    json,
+                }),
+                HostAction::Install {
+                    bin,
+                    from_source,
+                    force,
+                } => host_component::install(bin.as_deref(), from_source.as_deref(), force),
+                HostAction::Run { config, bin } => {
+                    host_component::run(config.as_deref(), bin.as_deref())
+                }
+                HostAction::Doctor { config, bin } => {
+                    host_component::doctor(config.as_deref(), bin.as_deref())
+                }
+                HostAction::Service { action } => match action {
+                    HostServiceAction::Install {
+                        config,
+                        bin,
+                        force,
+                        no_start,
+                        dry_run,
+                    } => host_component::service_install(
+                        config.as_deref(),
+                        bin.as_deref(),
+                        force,
+                        no_start,
+                        dry_run,
+                    ),
+                    HostServiceAction::Start { config, bin } => {
+                        host_component::service_start(config.as_deref(), bin.as_deref())
+                    }
+                    HostServiceAction::Stop => host_component::service_stop(),
+                    HostServiceAction::Restart { config, bin } => {
+                        host_component::service_restart(config.as_deref(), bin.as_deref())
+                    }
+                    HostServiceAction::Status { config } => {
+                        host_component::service_status(config.as_deref())
+                    }
+                    HostServiceAction::Logs { lines, follow } => {
+                        host_component::service_logs(lines, follow)
+                    }
+                    HostServiceAction::Uninstall => host_component::service_uninstall(),
+                },
+                HostAction::Config { action } => match action {
+                    HostConfigAction::Show { config, reveal } => {
+                        host_component::config_show(config.as_deref(), reveal)
+                    }
+                },
+                HostAction::Publish {
+                    name,
+                    config,
+                    url,
+                    description,
+                    json,
+                } => host_component::publish(
+                    &client,
+                    &name,
+                    config.as_deref(),
+                    url.as_deref(),
+                    &description,
+                    json,
+                ),
+                HostAction::Add {
+                    name,
+                    url,
+                    description,
+                    capabilities,
+                    json,
+                } => commands::host_add(&client, &name, &url, &description, &capabilities, json),
+                HostAction::List { json } => commands::host_list(&client, json),
+                HostAction::Get { id, json } => commands::host_get(&client, id, json),
+                HostAction::Update {
+                    id,
+                    name,
+                    url,
+                    description,
+                    capabilities,
+                    json,
+                } => commands::host_update(
+                    &client,
+                    id,
+                    name.as_deref(),
+                    url.as_deref(),
+                    description.as_deref(),
+                    capabilities.as_deref(),
+                    json,
+                ),
+                HostAction::Remove { id } => commands::host_remove(&client, id),
+                HostAction::Status { host, token, json } => {
+                    commands::host_status(&client, &host, token.as_deref(), json)
+                }
+                HostAction::Programs { host, token, json } => {
+                    commands::host_programs(&client, &host, token.as_deref(), json)
+                }
+                HostAction::Program {
+                    host,
+                    name,
+                    action,
+                    token,
+                    json,
+                } => commands::host_program(&client, &host, &name, &action, token.as_deref(), json),
+                HostAction::Events {
+                    host,
+                    limit,
+                    token,
+                    json,
+                } => commands::host_events(&client, &host, limit, token.as_deref(), json),
+                HostAction::Signals {
+                    host,
+                    limit,
+                    token,
+                    json,
+                } => commands::host_signals(&client, &host, limit, token.as_deref(), json),
+                HostAction::Signal {
+                    host,
+                    payload,
+                    token,
+                    json,
+                } => commands::host_signal(&client, &host, &payload, token.as_deref(), json),
+                HostAction::Harness { host, token, json } => {
+                    commands::host_harness(&client, &host, token.as_deref(), json)
+                }
+                HostAction::Agent {
+                    host,
+                    text,
+                    source,
+                    intent,
+                    token,
+                    json,
+                } => commands::host_agent(
+                    &client,
+                    &host,
+                    &text,
+                    &source,
+                    intent.as_deref(),
+                    token.as_deref(),
+                    json,
+                ),
+                HostAction::Event {
+                    host,
+                    event,
+                    reason,
+                    token,
+                    json,
+                } => commands::host_event(
+                    &client,
+                    &host,
+                    &event,
+                    reason.as_deref(),
+                    token.as_deref(),
+                    json,
+                ),
+                HostAction::Tick { host, token, json } => {
+                    commands::host_tick(&client, &host, token.as_deref(), json)
+                }
+            };
+            result.map(|s| print!("{s}"))
         }
         Command::Mcp => mcp::serve(),
         Command::Upgrade => upgrade::run(),
@@ -1323,9 +2199,15 @@ fn run_sof(cfg: &Config, slug: &str, version: &str, json: bool) -> Result<(), St
     let item = v.get("item").cloned().unwrap_or(v.clone());
     let name = item.get("name").and_then(|x| x.as_str()).unwrap_or("-");
     let cat = item.get("category").and_then(|x| x.as_str()).unwrap_or("-");
-    let desc = item.get("description").and_then(|x| x.as_str()).unwrap_or("");
+    let desc = item
+        .get("description")
+        .and_then(|x| x.as_str())
+        .unwrap_or("");
     let comp_ver = item.get("version").and_then(|x| x.as_str()).unwrap_or("-");
-    let std_ver = item.get("sof_version").and_then(|x| x.as_str()).unwrap_or("-");
+    let std_ver = item
+        .get("sof_version")
+        .and_then(|x| x.as_str())
+        .unwrap_or("-");
     println!("{name}  [{cat}]");
     println!("slug      : {slug}");
     println!("版本      : {comp_ver}（SOF 标准 {std_ver}）");
@@ -1333,7 +2215,14 @@ fn run_sof(cfg: &Config, slug: &str, version: &str, json: bool) -> Result<(), St
         println!("描述      : {desc}");
     }
     if let Some(ready) = item.get("agentic_ready").and_then(|x| x.as_bool()) {
-        println!("agentic   : {}", if ready { "是" } else { "否（Harness 包为骨架）" });
+        println!(
+            "agentic   : {}",
+            if ready {
+                "是"
+            } else {
+                "否（Harness 包为骨架）"
+            }
+        );
     }
     if let Some(spec) = item.get("spec").and_then(|x| x.as_str()) {
         if !spec.is_empty() {
@@ -1377,14 +2266,27 @@ fn run_manifest(cfg: &Config, slug: &str, version: &str, json: bool) -> Result<(
     }
     if let Some(so) = v.get("sof") {
         let ver = so.get("version").and_then(|x| x.as_str()).unwrap_or("-");
-        let std = so.get("sof_version").and_then(|x| x.as_str()).unwrap_or("-");
+        let std = so
+            .get("sof_version")
+            .and_then(|x| x.as_str())
+            .unwrap_or("-");
         println!("设备      : {slug}  ·  版本 {ver}（SOF 标准 {std}）");
     }
     if let Some(rd) = v.get("readiness") {
-        let score = rd.get("score").map(|s| s.to_string()).unwrap_or_else(|| "-".into());
+        let score = rd
+            .get("score")
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "-".into());
         let grade = rd.get("grade").and_then(|x| x.as_str()).unwrap_or("-");
         let valid = rd.get("valid").and_then(|x| x.as_bool()).unwrap_or(false);
-        println!("就绪度    : {score} / {grade}{}", if valid { "" } else { "（存在校验问题）" });
+        println!(
+            "就绪度    : {score} / {grade}{}",
+            if valid {
+                ""
+            } else {
+                "（存在校验问题）"
+            }
+        );
         if let Some(issues) = rd.get("issues").and_then(|i| i.as_array()) {
             for it in issues {
                 let msg = it
@@ -1399,11 +2301,24 @@ fn run_manifest(cfg: &Config, slug: &str, version: &str, json: bool) -> Result<(
         }
     }
     if let Some(exec) = v.get("execution") {
-        let executed = exec.get("executed").and_then(|x| x.as_bool()).unwrap_or(false);
+        let executed = exec
+            .get("executed")
+            .and_then(|x| x.as_bool())
+            .unwrap_or(false);
         if executed {
-            let score = exec.get("score").map(|s| s.to_string()).unwrap_or_else(|| "-".into());
+            let score = exec
+                .get("score")
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "-".into());
             let src = exec.get("source").and_then(|x| x.as_str()).unwrap_or("");
-            println!("实测      : {score}{}", if src.is_empty() { String::new() } else { format!("（来源 {src}）") });
+            println!(
+                "实测      : {score}{}",
+                if src.is_empty() {
+                    String::new()
+                } else {
+                    format!("（来源 {src}）")
+                }
+            );
         } else {
             println!("实测      : 尚未有实测结果（可用 ratsa-harness report 回传）");
         }
@@ -1424,7 +2339,10 @@ fn run_packages(cfg: &Config, slug: &str, version: &str, json: bool) -> Result<(
     let v = resp.json();
     if json {
         let pkgs = v.get("packages").cloned().unwrap_or(serde_json::json!([]));
-        println!("{}", serde_json::to_string_pretty(&pkgs).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&pkgs).unwrap_or_default()
+        );
         return Ok(());
     }
     print!("{}", commands::format_packages(&v)?);
@@ -1465,7 +2383,14 @@ fn config_show(cfg: &Config, reveal: bool) -> Result<(), String> {
     let path = config::config_path();
     println!("配置文件 : {}", path.display());
     println!("base_url : {}", cfg.base());
-    println!("key_id   : {}", if cfg.key_id.is_empty() { "-" } else { &cfg.key_id });
+    println!(
+        "key_id   : {}",
+        if cfg.key_id.is_empty() {
+            "-"
+        } else {
+            &cfg.key_id
+        }
+    );
     println!(
         "secret   : {}",
         if cfg.secret.is_empty() {
@@ -1478,14 +2403,25 @@ fn config_show(cfg: &Config, reveal: bool) -> Result<(), String> {
     );
     println!(
         "权限     : {}",
-        if cfg.scopes.is_empty() { "-".to_string() } else { cfg.scopes.join(", ") }
+        if cfg.scopes.is_empty() {
+            "-".to_string()
+        } else {
+            cfg.scopes.join(", ")
+        }
     );
     let bound = if !cfg.acting_as.is_empty() {
         cfg.acting_as.clone()
     } else {
         cfg.bound_slug.clone()
     };
-    println!("归属绑定 : {}", if bound.is_empty() { "-".to_string() } else { format!("@{bound}") });
+    println!(
+        "归属绑定 : {}",
+        if bound.is_empty() {
+            "-".to_string()
+        } else {
+            format!("@{bound}")
+        }
+    );
     println!(
         "会话     : {}",
         if cfg.session_token.is_empty() {

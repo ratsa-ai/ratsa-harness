@@ -38,7 +38,11 @@ pub fn whoami(cfg: &mut Config, json_out: bool) -> Result<(), String> {
         return Ok(());
     }
     let client = Client::new(cfg);
-    let path = if cfg.has_key() { "/api/v1/me" } else { "/api/me" };
+    let path = if cfg.has_key() {
+        "/api/v1/me"
+    } else {
+        "/api/me"
+    };
     let resp = client.get(path)?;
     if resp.status >= 400 {
         return Err(resp.error_message());
@@ -56,7 +60,14 @@ pub fn whoami(cfg: &mut Config, json_out: bool) -> Result<(), String> {
         let name = u.get("name").and_then(|x| x.as_str()).unwrap_or("-");
         let slug = u.get("slug").and_then(|x| x.as_str()).unwrap_or("");
         let plan = u.get("plan").and_then(|x| x.as_str()).unwrap_or("");
-        println!("账号      : {name}{}", if slug.is_empty() { String::new() } else { format!("  @{slug}") });
+        println!(
+            "账号      : {name}{}",
+            if slug.is_empty() {
+                String::new()
+            } else {
+                format!("  @{slug}")
+            }
+        );
         if !plan.is_empty() {
             println!("套餐      : {plan}");
         }
@@ -70,9 +81,20 @@ pub fn whoami(cfg: &mut Config, json_out: bool) -> Result<(), String> {
         let scopes: Vec<String> = k
             .get("scopes")
             .and_then(|s| s.as_array())
-            .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| x.as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default();
-        println!("权限      : {}", if scopes.is_empty() { "-".into() } else { scopes.join(", ") });
+        println!(
+            "权限      : {}",
+            if scopes.is_empty() {
+                "-".into()
+            } else {
+                scopes.join(", ")
+            }
+        );
         // Keep the local cache in sync so the installer can print it.
         cfg.scopes = scopes;
         cfg.key_name = name.to_string();
@@ -83,7 +105,10 @@ pub fn whoami(cfg: &mut Config, json_out: bool) -> Result<(), String> {
         println!("归属绑定  : @{slug}（{name}）—— 以该账号身份行动");
         cfg.acting_as = slug.to_string();
     } else if !cfg.bound_slug.is_empty() {
-        println!("归属绑定  : @{}（未生效，请检查该 handle 是否存在）", cfg.bound_slug);
+        println!(
+            "归属绑定  : @{}（未生效，请检查该 handle 是否存在）",
+            cfg.bound_slug
+        );
     }
     println!("服务端    : {}", cfg.base());
     let _ = cfg.save();
@@ -91,7 +116,12 @@ pub fn whoami(cfg: &mut Config, json_out: bool) -> Result<(), String> {
 }
 
 /// `login` — exchange email/password for a JWT session (used to mint keys).
-pub fn login(cfg: &mut Config, email: &str, password: &str, base_url: Option<&str>) -> Result<(), String> {
+pub fn login(
+    cfg: &mut Config,
+    email: &str,
+    password: &str,
+    base_url: Option<&str>,
+) -> Result<(), String> {
     if let Some(b) = base_url {
         cfg.base_url = b.trim_end_matches('/').to_string();
     }
@@ -163,7 +193,11 @@ pub fn format_scope_table(meta: &Value) -> String {
     let defaults: Vec<String> = block
         .get("defaults")
         .and_then(|s| s.as_array())
-        .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default();
 
     let mut out = String::new();
@@ -181,7 +215,10 @@ pub fn format_scope_table(meta: &Value) -> String {
         g.dedup();
         g
     } else {
-        groups.iter().filter_map(|x| x.as_str().map(String::from)).collect()
+        groups
+            .iter()
+            .filter_map(|x| x.as_str().map(String::from))
+            .collect()
     };
     for g in group_names {
         out.push_str(&format!("[{g}]\n"));
@@ -193,7 +230,10 @@ pub fn format_scope_table(meta: &Value) -> String {
             let label = s.get("label").and_then(|x| x.as_str()).unwrap_or("");
             let desc = s.get("desc").and_then(|x| x.as_str()).unwrap_or("");
             let write = s.get("write").and_then(|x| x.as_bool()).unwrap_or(false);
-            let admin = s.get("admin_only").and_then(|x| x.as_bool()).unwrap_or(false);
+            let admin = s
+                .get("admin_only")
+                .and_then(|x| x.as_bool())
+                .unwrap_or(false);
             let mut flags = Vec::new();
             if write {
                 flags.push("写");
@@ -220,7 +260,11 @@ pub fn format_scope_table(meta: &Value) -> String {
 
 pub fn scopes(cfg: &Config) -> Result<(), String> {
     let client = Client::new(cfg);
-    let path = if cfg.has_key() { "/api/v1/meta" } else { "/api/meta" };
+    let path = if cfg.has_key() {
+        "/api/v1/meta"
+    } else {
+        "/api/meta"
+    };
     let resp = client.get(path)?;
     if resp.status >= 400 {
         return Err(resp.error_message());
@@ -245,19 +289,30 @@ pub fn keys_list(cfg: &Config, json_out: bool) -> Result<(), String> {
         println!("{}", serde_json::to_string_pretty(&v).unwrap_or_default());
         return Ok(());
     }
-    let items = v.get("items").and_then(|i| i.as_array()).cloned().unwrap_or_default();
+    let items = v
+        .get("items")
+        .and_then(|i| i.as_array())
+        .cloned()
+        .unwrap_or_default();
     if items.is_empty() {
         println!("还没有 key。创建一个：ratsa-harness keys create --name agent --scopes sof:read,package:pull");
         return Ok(());
     }
-    println!("{:<18} {:<16} {:<26} {:<12} {}", "KEY_ID", "名称", "权限", "归属绑定", "状态");
+    println!(
+        "{:<18} {:<16} {:<26} {:<12} {}",
+        "KEY_ID", "名称", "权限", "归属绑定", "状态"
+    );
     for k in items {
         let kid = k.get("key_id").and_then(|x| x.as_str()).unwrap_or("");
         let name = k.get("name").and_then(|x| x.as_str()).unwrap_or("");
         let scopes: Vec<String> = k
             .get("scopes")
             .and_then(|s| s.as_array())
-            .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| x.as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default();
         let bound = k
             .get("bound_user")
@@ -323,7 +378,11 @@ pub fn keys_create(
     let eff: Vec<String> = key
         .get("scopes")
         .and_then(|s| s.as_array())
-        .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default();
 
     println!("已创建 key：{name}");
@@ -345,7 +404,10 @@ pub fn keys_create(
         cfg.acting_as = bound.clone();
         cfg.save()?;
         println!();
-        println!("已设为当前凭证（保存在 {}）", crate::config::config_path().display());
+        println!(
+            "已设为当前凭证（保存在 {}）",
+            crate::config::config_path().display()
+        );
     } else {
         println!();
         println!("应用为当前凭证：ratsa-harness config set --key-id {key_id} --secret <secret>");
@@ -456,7 +518,12 @@ pub fn format_sofs(rows: &[Value]) -> String {
     out
 }
 
-pub fn list_sofs(client: &Client, query: &str, category: &str, limit: usize) -> Result<String, String> {
+pub fn list_sofs(
+    client: &Client,
+    query: &str,
+    category: &str,
+    limit: usize,
+) -> Result<String, String> {
     let rows = filter_sofs(client, query, category, limit)?;
     Ok(format_sofs(&rows))
 }
@@ -526,7 +593,11 @@ pub fn format_packages(manifest: &Value) -> Result<String, String> {
             } else {
                 String::new()
             };
-            let target = if !pkg_slug.is_empty() { pkg_slug } else { pull_slug };
+            let target = if !pkg_slug.is_empty() {
+                pkg_slug
+            } else {
+                pull_slug
+            };
             out.push_str(&format!(
                 "    拉取: ratsa-harness pull {target} {flag}{version_flag}\n"
             ));
@@ -594,7 +665,11 @@ pub fn pull_report(
     let kind = match kind {
         "" => "device",
         k @ ("device" | "eval-repo" | "service") => k,
-        other => return Err(format!("未知 kind「{other}」，可选 device | eval-repo | service")),
+        other => {
+            return Err(format!(
+                "未知 kind「{other}」，可选 device | eval-repo | service"
+            ))
+        }
     };
     let path = match kind {
         "device" => with_version(&format!("/api/harness/sof/{slug}/package"), version),
@@ -618,13 +693,20 @@ pub fn pull_report(
     out.push_str(&format!("  落盘  : {}\n", file.display()));
     out.push_str(&format!("  大小  : {size} 字节\n"));
     append_artifact_meta(&mut out, &headers);
-    out.push_str(&format!("  解包  : unzip -o {} -d {}\n", file.display(), dir.display()));
+    out.push_str(&format!(
+        "  解包  : unzip -o {} -d {}\n",
+        file.display(),
+        dir.display()
+    ));
     Ok(out)
 }
 
 fn append_artifact_meta(out: &mut String, headers: &Headers) {
     if !headers.checksum.is_empty() {
-        out.push_str(&format!("  校验  : sha256 {}（已本地复算通过）\n", headers.checksum));
+        out.push_str(&format!(
+            "  校验  : sha256 {}（已本地复算通过）\n",
+            headers.checksum
+        ));
     }
     if !headers.level.is_empty() {
         let level = match headers.level.as_str() {
@@ -665,7 +747,9 @@ pub fn package_cmd(
     let mut out = String::new();
     out.push_str(&format!(
         "Harness Package（{}）· 设备 {slug}\n",
-        v.get("package_kind").and_then(|x| x.as_str()).unwrap_or("device-harness")
+        v.get("package_kind")
+            .and_then(|x| x.as_str())
+            .unwrap_or("device-harness")
     ));
     let id = pkg.get("id").and_then(|x| x.as_str()).unwrap_or("");
     let ver = pkg.get("version").and_then(|x| x.as_str()).unwrap_or("");
@@ -677,7 +761,10 @@ pub fn package_cmd(
             out.push_str(&format!("  SOF 版本   : {sof_ver}\n"));
         }
     }
-    let score = rd.get("score").map(|s| s.to_string()).unwrap_or_else(|| "-".into());
+    let score = rd
+        .get("score")
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| "-".into());
     let grade = rd.get("grade").and_then(|x| x.as_str()).unwrap_or("-");
     out.push_str(&format!("  就绪度     : {score} / {grade}\n"));
     if let Some(n) = v.get("file_count") {
@@ -689,7 +776,11 @@ pub fn package_cmd(
     if let Some(files) = pkg.get("files").and_then(|x| x.as_array()) {
         out.push_str("  包内文件   :\n");
         for f in files {
-            let p = f.get("path").or_else(|| f.get("name")).and_then(|x| x.as_str()).unwrap_or("");
+            let p = f
+                .get("path")
+                .or_else(|| f.get("name"))
+                .and_then(|x| x.as_str())
+                .unwrap_or("");
             let note = f.get("note").and_then(|x| x.as_str()).unwrap_or("");
             if note.is_empty() {
                 out.push_str(&format!("    - {p}\n"));
@@ -759,10 +850,10 @@ pub fn sof_push_cmd(
     dry_run: bool,
 ) -> Result<String, String> {
     let path = PathBuf::from(file);
-    let raw = std::fs::read_to_string(&path)
-        .map_err(|e| format!("读不了 {}：{e}", path.display()))?;
-    let doc: Value = serde_json::from_str(&raw)
-        .map_err(|e| format!("{} 不是合法 JSON：{e}", path.display()))?;
+    let raw =
+        std::fs::read_to_string(&path).map_err(|e| format!("读不了 {}：{e}", path.display()))?;
+    let doc: Value =
+        serde_json::from_str(&raw).map_err(|e| format!("{} 不是合法 JSON：{e}", path.display()))?;
 
     let comp = doc
         .get("component")
@@ -791,8 +882,14 @@ pub fn sof_push_cmd(
         coerced.push(f);
     }
 
-    let name = comp.get("name").and_then(|v| v.as_str()).unwrap_or("（未填）");
-    let category = comp.get("category").and_then(|v| v.as_str()).unwrap_or("（未填）");
+    let name = comp
+        .get("name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("（未填）");
+    let category = comp
+        .get("category")
+        .and_then(|v| v.as_str())
+        .unwrap_or("（未填）");
 
     if dry_run {
         let mut out = format!("（dry-run，未提交）\n 文件 : {}\n", path.display());
@@ -829,20 +926,20 @@ pub fn sof_push_cmd(
     let got = item.get("slug").and_then(|x| x.as_str()).unwrap_or("");
     let got_name = item.get("name").and_then(|x| x.as_str()).unwrap_or(name);
 
-    let mut out = format!(
-        "{}成功\n",
-        if slug.is_some() { "更新" } else { "创建" }
-    );
+    let mut out = format!("{}成功\n", if slug.is_some() { "更新" } else { "创建" });
     out.push_str(&format!(" 名称 : {got_name}\n"));
     if !got.is_empty() {
         out.push_str(&format!(" slug : {got}\n"));
         out.push_str(&format!(" 链接 : https://ratsa.ai/sof/{got}\n"));
     }
     if !coerced.is_empty() {
-        out.push_str(&format!(" 转换 : {} 已序列化为字符串\n", coerced.join(", ")));
+        out.push_str(&format!(
+            " 转换 : {} 已序列化为字符串\n",
+            coerced.join(", ")
+        ));
     }
     if slug.is_none() && !got.is_empty() {
-        out.push_str(" 提示 : 记住这个 slug —— 重传要用它（`sof-push <file> --slug " );
+        out.push_str(" 提示 : 记住这个 slug —— 重传要用它（`sof-push <file> --slug ");
         out.push_str(got);
         out.push_str("`）\n");
     }
@@ -878,14 +975,24 @@ struct Pending {
 }
 
 /// 收文件。`from_assets` 时按 `assets/<子目录>/` 判类型，否则一律用 `fallback_type`。
-fn collect_files(paths: &[String], from_assets: bool, fallback_type: &str) -> Result<Vec<Pending>, String> {
+fn collect_files(
+    paths: &[String],
+    from_assets: bool,
+    fallback_type: &str,
+) -> Result<Vec<Pending>, String> {
     let mut out = Vec::new();
     for p in paths {
         let base = std::path::PathBuf::from(p);
         if base.is_file() {
-            let size = std::fs::metadata(&base).map(|m| m.len() as i64).unwrap_or(0);
+            let size = std::fs::metadata(&base)
+                .map(|m| m.len() as i64)
+                .unwrap_or(0);
             out.push(Pending {
-                name: base.file_name().unwrap_or_default().to_string_lossy().to_string(),
+                name: base
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string(),
                 path: base,
                 size,
                 r#type: fallback_type.to_string(),
@@ -897,13 +1004,18 @@ fn collect_files(paths: &[String], from_assets: bool, fallback_type: &str) -> Re
         }
         // 目录：--from-assets 时只收 assets/<已知子目录>/，其余一律不进
         // （避免把 sop.json / README.md / _incoming 里的大件也传上去）。
-        let root = if from_assets { base.join("assets") } else { base.clone() };
+        let root = if from_assets {
+            base.join("assets")
+        } else {
+            base.clone()
+        };
         if from_assets && !root.is_dir() {
             return Err(format!("{} 下没有 assets/ 目录", base.display()));
         }
         let mut stack = vec![root.clone()];
         while let Some(d) = stack.pop() {
-            let entries = std::fs::read_dir(&d).map_err(|e| format!("读不了 {}：{e}", d.display()))?;
+            let entries =
+                std::fs::read_dir(&d).map_err(|e| format!("读不了 {}：{e}", d.display()))?;
             for e in entries.flatten() {
                 let path = e.path();
                 if path.is_dir() {
@@ -924,9 +1036,15 @@ fn collect_files(paths: &[String], from_assets: bool, fallback_type: &str) -> Re
                 } else {
                     fallback_type.to_string()
                 };
-                let size = std::fs::metadata(&path).map(|m| m.len() as i64).unwrap_or(0);
+                let size = std::fs::metadata(&path)
+                    .map(|m| m.len() as i64)
+                    .unwrap_or(0);
                 out.push(Pending {
-                    name: path.file_name().unwrap_or_default().to_string_lossy().to_string(),
+                    name: path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string(),
                     path,
                     size,
                     r#type: ty,
@@ -940,7 +1058,10 @@ fn collect_files(paths: &[String], from_assets: bool, fallback_type: &str) -> Re
 
 /// 从 `/api/meta` 问出本部署的上传上限；拿不到则回退内置默认并**如实说明**。
 fn resolve_max_bytes(client: &Client) -> (i64, bool) {
-    let v = client.get("/api/meta").map(|r| r.json()).unwrap_or(Value::Null);
+    let v = client
+        .get("/api/meta")
+        .map(|r| r.json())
+        .unwrap_or(Value::Null);
     match v.pointer("/upload/max_bytes").and_then(|x| x.as_i64()) {
         Some(n) if n > 0 => (n, false),
         _ => (DEFAULT_MAX_UPLOAD_BYTES, true),
@@ -965,7 +1086,10 @@ pub fn sof_upload_cmd(
     let fallback = type_opt.unwrap_or("other");
     let all = collect_files(paths, from_assets, fallback)?;
     if all.is_empty() {
-        return Err("没有找到可上传的文件（--from-assets 只收 assets/{docs,drawings,tools,firmware}/）".into());
+        return Err(
+            "没有找到可上传的文件（--from-assets 只收 assets/{docs,drawings,tools,firmware}/）"
+                .into(),
+        );
     }
 
     // ★ 本地过滤：超限文件**一个字节都不发**，直接计入跳过。
@@ -981,11 +1105,22 @@ pub fn sof_upload_cmd(
 
     if dry_run {
         let mut s = String::from("（dry-run，未请求票据、未上传）\n");
-        s.push_str(&format!(" 上限 : {} 字节（{:.1} MiB）", max_bytes, max_bytes as f64 / 1048576.0));
-        s.push_str(if used_default { "  ← 服务端未声明，用的是本地默认值\n" } else { "\n" });
+        s.push_str(&format!(
+            " 上限 : {} 字节（{:.1} MiB）",
+            max_bytes,
+            max_bytes as f64 / 1048576.0
+        ));
+        s.push_str(if used_default {
+            "  ← 服务端未声明，用的是本地默认值\n"
+        } else {
+            "\n"
+        });
         s.push_str(&format!(" 将上传 {} 个：\n", sendable.len()));
         for f in &sendable {
-            s.push_str(&format!("   ✓ {:>8} B  [{}] {}\n", f.size, f.r#type, f.name));
+            s.push_str(&format!(
+                "   ✓ {:>8} B  [{}] {}\n",
+                f.size, f.r#type, f.name
+            ));
         }
         if !skipped.is_empty() {
             s.push_str(&format!(" 跳过 {} 个（超限）：\n", skipped.len()));
@@ -1041,7 +1176,10 @@ pub fn sof_upload_cmd(
                     name: o["name"].as_str().unwrap_or("").to_string(),
                     key: o["key"].as_str().unwrap_or("").to_string(),
                     url: o["url"].as_str().unwrap_or("").to_string(),
-                    content_type: o["content_type"].as_str().unwrap_or("application/octet-stream").to_string(),
+                    content_type: o["content_type"]
+                        .as_str()
+                        .unwrap_or("application/octet-stream")
+                        .to_string(),
                 })
                 .collect()
         })
@@ -1121,7 +1259,11 @@ pub fn sof_upload_cmd(
         failed.len(),
         skipped.len()
     ));
-    s.push_str(if wrote { "\n资源已回填。\n" } else { "\n（没有需要回填的资源）\n" });
+    s.push_str(if wrote {
+        "\n资源已回填。\n"
+    } else {
+        "\n（没有需要回填的资源）\n"
+    });
     if !skipped.is_empty() {
         s.push_str("超限的文件请自行上传到别处，再用资源外链提交。\n");
     }
@@ -1153,7 +1295,12 @@ pub fn kb_path(sof: &str, type_filter: &str) -> String {
 ///
 /// 知识库**不对外开放**：服务端只放行「该厂商账号名下的 key」或「bound_slug
 /// 绑定到该账号的 key」，且 key 需带 `kb:read`；只有 `published` 文档会返回。
-pub fn kb_index(client: &Client, sof: &str, type_filter: &str, json_out: bool) -> Result<String, String> {
+pub fn kb_index(
+    client: &Client,
+    sof: &str,
+    type_filter: &str,
+    json_out: bool,
+) -> Result<String, String> {
     let path = kb_path(sof, type_filter);
     let resp = client.get(&path)?;
     if resp.status >= 400 {
@@ -1174,12 +1321,20 @@ pub fn kb_index(client: &Client, sof: &str, type_filter: &str, json_out: bool) -
         .and_then(|s| s.get("name"))
         .and_then(|s| s.as_str())
         .unwrap_or("");
-    let docs = v.get("docs").and_then(|d| d.as_array()).cloned().unwrap_or_default();
+    let docs = v
+        .get("docs")
+        .and_then(|d| d.as_array())
+        .cloned()
+        .unwrap_or_default();
 
     let mut out = String::new();
     out.push_str(&format!(
         "SOF 知识库 · 归属 @{owner}{}{} · 共 {} 篇（仅含已发布）\n",
-        if sof_name.is_empty() { "" } else { " · 设备 " },
+        if sof_name.is_empty() {
+            ""
+        } else {
+            " · 设备 "
+        },
         sof_name,
         docs.len()
     ));
@@ -1194,7 +1349,11 @@ pub fn kb_index(client: &Client, sof: &str, type_filter: &str, json_out: bool) -
     ));
     out.push_str(&format!(
         "拉取原文：ratsa kb{} --doc <key>\n",
-        if sof.is_empty() { String::new() } else { format!(" --sof {sof}") }
+        if sof.is_empty() {
+            String::new()
+        } else {
+            format!(" --sof {sof}")
+        }
     ));
     if docs.is_empty() {
         out.push_str("\n（这个知识库还没有已发布的文档）\n");
@@ -1205,7 +1364,10 @@ pub fn kb_index(client: &Client, sof: &str, type_filter: &str, json_out: bool) -
     for d in &docs {
         let cat = d.get("category").and_then(|c| c.as_str()).unwrap_or("");
         if last_cat.as_deref() != Some(cat) {
-            out.push_str(&format!("[{}]\n", if cat.is_empty() { "未分组" } else { cat }));
+            out.push_str(&format!(
+                "[{}]\n",
+                if cat.is_empty() { "未分组" } else { cat }
+            ));
             last_cat = Some(cat.to_string());
         }
         let key = d.get("key").and_then(|k| k.as_str()).unwrap_or("");
@@ -1234,14 +1396,24 @@ pub fn kb_index(client: &Client, sof: &str, type_filter: &str, json_out: bool) -
 ///
 /// `doc` 既可以是文档键（如 `quickstart`），也可以是文档 slug；键会先在索引里
 /// 解析成 slug，所以客户不需要记住随机编码。
-pub fn kb_read(client: &Client, sof: &str, type_filter: &str, doc: &str, out_dir: &str) -> Result<String, String> {
+pub fn kb_read(
+    client: &Client,
+    sof: &str,
+    type_filter: &str,
+    doc: &str,
+    out_dir: &str,
+) -> Result<String, String> {
     let index_path = kb_path(sof, type_filter);
     let idx = client.get(&index_path)?;
     if idx.status >= 400 {
         return Err(idx.error_message());
     }
     let idx = idx.json();
-    let docs = idx.get("docs").and_then(|d| d.as_array()).cloned().unwrap_or_default();
+    let docs = idx
+        .get("docs")
+        .and_then(|d| d.as_array())
+        .cloned()
+        .unwrap_or_default();
     let found = docs.iter().find(|d| {
         d.get("key").and_then(|k| k.as_str()) == Some(doc)
             || d.get("slug").and_then(|k| k.as_str()) == Some(doc)
@@ -1255,16 +1427,44 @@ pub fn kb_read(client: &Client, sof: &str, type_filter: &str, doc: &str, out_dir
                 .collect();
             return Err(format!(
                 "知识库里没有文档「{doc}」{}。可用：{}",
-                if sof.is_empty() { String::new() } else { format!("（设备 {sof}）") },
-                if keys.is_empty() { "（暂无已发布文档）".to_string() } else { keys.join(", ") }
+                if sof.is_empty() {
+                    String::new()
+                } else {
+                    format!("（设备 {sof}）")
+                },
+                if keys.is_empty() {
+                    "（暂无已发布文档）".to_string()
+                } else {
+                    keys.join(", ")
+                }
             ));
         }
     };
-    let slug = found.get("slug").and_then(|s| s.as_str()).unwrap_or("").to_string();
-    let key = found.get("key").and_then(|s| s.as_str()).unwrap_or("doc").to_string();
-    let title = found.get("title").and_then(|s| s.as_str()).unwrap_or("").to_string();
-    let tp = found.get("type").and_then(|s| s.as_str()).unwrap_or("").to_string();
-    let want = found.get("checksum").and_then(|c| c.as_str()).unwrap_or("").to_string();
+    let slug = found
+        .get("slug")
+        .and_then(|s| s.as_str())
+        .unwrap_or("")
+        .to_string();
+    let key = found
+        .get("key")
+        .and_then(|s| s.as_str())
+        .unwrap_or("doc")
+        .to_string();
+    let title = found
+        .get("title")
+        .and_then(|s| s.as_str())
+        .unwrap_or("")
+        .to_string();
+    let tp = found
+        .get("type")
+        .and_then(|s| s.as_str())
+        .unwrap_or("")
+        .to_string();
+    let want = found
+        .get("checksum")
+        .and_then(|c| c.as_str())
+        .unwrap_or("")
+        .to_string();
 
     let (body, headers) = client.download(&format!("/api/v1/kb/{slug}"))?;
     let got = headers.checksum.clone();
@@ -1277,7 +1477,11 @@ pub fn kb_read(client: &Client, sof: &str, type_filter: &str, doc: &str, out_dir
         out.push_str(&format!("# {title}\n"));
         out.push_str(&format!(
             "<!-- key={key} type={tp} checksum={} -->\n\n",
-            if got.is_empty() { want.as_str() } else { got.as_str() }
+            if got.is_empty() {
+                want.as_str()
+            } else {
+                got.as_str()
+            }
         ));
         out.push_str(&String::from_utf8_lossy(&body));
         if !out.ends_with('\n') {
@@ -1316,7 +1520,9 @@ pub fn report_run(
         checks.push(json!({"name": "passed", "status": "pass", "value": p}));
     }
     if let Some(f) = failed {
-        checks.push(json!({"name": "failed", "status": if f == 0 { "pass" } else { "fail" }, "value": f}));
+        checks.push(
+            json!({"name": "failed", "status": if f == 0 { "pass" } else { "fail" }, "value": f}),
+        );
     }
     let body = json!({
         "source": source,
@@ -1804,7 +2010,9 @@ pub fn lab_devices(client: &Client, slug: &str, json_out: bool) -> Result<String
         .cloned()
         .unwrap_or_default();
     if items.is_empty() {
-        return Ok("该 Lab 还没有绑定设备。用 `ratsa lab device add <lab> <sof-slug>` 添加。\n".into());
+        return Ok(
+            "该 Lab 还没有绑定设备。用 `ratsa lab device add <lab> <sof-slug>` 添加。\n".into(),
+        );
     }
     let mut out = format!(
         "id  {} {} {} {}\n",
@@ -1816,7 +2024,13 @@ pub fn lab_devices(client: &Client, slug: &str, json_out: bool) -> Result<String
     for d in items {
         out.push_str(&format!(
             "{} {} {} {} {}\n",
-            pad_cells(&d.get("id").and_then(|x| x.as_u64()).unwrap_or(0).to_string(), 3),
+            pad_cells(
+                &d.get("id")
+                    .and_then(|x| x.as_u64())
+                    .unwrap_or(0)
+                    .to_string(),
+                3
+            ),
             pad_cells(device_status_text(lab_field(&d, "status")), 8),
             pad_cells(&truncate_cells(lab_field(&d, "name"), 28), 28),
             pad_cells(&truncate_cells(lab_field(&d, "vendor_name"), 16), 16),
@@ -1853,8 +2067,21 @@ pub fn lab_vendors(client: &Client, query: &str, json_out: bool) -> Result<Strin
         out.push_str(&format!(
             "{} {} {} {}\n",
             pad_cells(lab_field(x, "slug"), 12),
-            pad_cells(&x.get("devices").and_then(|d| d.as_u64()).unwrap_or(0).to_string(), 8),
-            pad_cells(if x.get("verified").and_then(|b| b.as_bool()).unwrap_or(false) { "yes" } else { "no" }, 6),
+            pad_cells(
+                &x.get("devices")
+                    .and_then(|d| d.as_u64())
+                    .unwrap_or(0)
+                    .to_string(),
+                8
+            ),
+            pad_cells(
+                if x.get("verified").and_then(|b| b.as_bool()).unwrap_or(false) {
+                    "yes"
+                } else {
+                    "no"
+                },
+                6
+            ),
             lab_field(x, "name"),
         ));
     }
@@ -1973,7 +2200,11 @@ pub fn lab_feedback(client: &Client, slug: &str, json_out: bool) -> Result<Strin
             num("verified") as i64,
             num("avg_rating"),
             num("consented") as i64,
-            if sm.get("qualification_ready").and_then(|b| b.as_bool()).unwrap_or(false) {
+            if sm
+                .get("qualification_ready")
+                .and_then(|b| b.as_bool())
+                .unwrap_or(false)
+            {
                 "达到参考门槛"
             } else {
                 "未达参考门槛"
@@ -2003,13 +2234,29 @@ pub fn lab_feedback(client: &Client, slug: &str, json_out: bool) -> Result<Strin
         let date = date.get(..10).unwrap_or("-");
         out.push_str(&format!(
             "{} {} {} {} {} {} {}\n",
-            pad_cells(&f.get("id").and_then(|x| x.as_u64()).unwrap_or(0).to_string(), 3),
+            pad_cells(
+                &f.get("id")
+                    .and_then(|x| x.as_u64())
+                    .unwrap_or(0)
+                    .to_string(),
+                3
+            ),
             pad_cells(date, 12),
             pad_cells(&truncate_cells(customer, 20), 20),
             pad_cells(&truncate_cells(lab_field(&f, "service_name"), 18), 18),
-            pad_cells(&f.get("rating").and_then(|x| x.as_u64()).unwrap_or(0).to_string(), 5),
+            pad_cells(
+                &f.get("rating")
+                    .and_then(|x| x.as_u64())
+                    .unwrap_or(0)
+                    .to_string(),
+                5
+            ),
             pad_cells(feedback_status_text(lab_field(&f, "status")), 8),
-            if f.get("consent").and_then(|b| b.as_bool()).unwrap_or(false) { "yes" } else { "no" },
+            if f.get("consent").and_then(|b| b.as_bool()).unwrap_or(false) {
+                "yes"
+            } else {
+                "no"
+            },
         ));
     }
     Ok(out)
@@ -2129,7 +2376,6 @@ fn urlencode(raw: &str) -> String {
     out
 }
 
-
 // ------------------------------------------------------------------ helpers
 
 fn short(s: &str) -> String {
@@ -2207,12 +2453,22 @@ pub fn rth_spec(client: &Client, json_out: bool) -> Result<String, String> {
         return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
     }
     let mut out = String::new();
-    out.push_str(&format!("RTH · {}\n", v.get("manifest_spec").and_then(|x| x.as_str()).unwrap_or("")));
+    out.push_str(&format!(
+        "RTH · {}\n",
+        v.get("manifest_spec")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+    ));
     if let Some(d) = v.get("definition").and_then(|x| x.as_str()) {
         out.push_str(&format!("{d}\n\n"));
     }
     out.push_str("Planes\n");
-    for p in v.get("planes").and_then(|x| x.as_array()).cloned().unwrap_or_default() {
+    for p in v
+        .get("planes")
+        .and_then(|x| x.as_array())
+        .cloned()
+        .unwrap_or_default()
+    {
         out.push_str(&format!(
             "  • {} — {}\n",
             p.get("name").and_then(|x| x.as_str()).unwrap_or(""),
@@ -2220,13 +2476,18 @@ pub fn rth_spec(client: &Client, json_out: bool) -> Result<String, String> {
         ));
     }
     if let Some(caps) = v.pointer("/rth/capabilities").and_then(|x| x.as_array()) {
-        out.push_str("\nRTHCore capabilities\n");
+        out.push_str("\nRTHLoop capabilities\n");
         for c in caps {
             out.push_str(&format!("  • {}\n", c.as_str().unwrap_or("")));
         }
     }
     out.push_str("\nUse cases\n");
-    for u in v.get("use_cases").and_then(|x| x.as_array()).cloned().unwrap_or_default() {
+    for u in v
+        .get("use_cases")
+        .and_then(|x| x.as_array())
+        .cloned()
+        .unwrap_or_default()
+    {
         out.push_str(&format!(
             "  • {}\n",
             u.get("text").and_then(|x| x.as_str()).unwrap_or("")
@@ -2249,19 +2510,28 @@ pub fn rth_projects(client: &Client, query: &str, json_out: bool) -> Result<Stri
     if json_out {
         return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
     }
-    let items = v.get("items").and_then(|x| x.as_array()).cloned().unwrap_or_default();
+    let items = v
+        .get("items")
+        .and_then(|x| x.as_array())
+        .cloned()
+        .unwrap_or_default();
     if items.is_empty() {
         return Ok("没有公开的 RTH 项目。\n".into());
     }
-    let mut out = String::from("SLUG          NAME                          CORE      STATUS    AGENTIC\n");
+    let mut out =
+        String::from("SLUG          NAME                          CORE      STATUS    AGENTIC\n");
     for it in items {
         out.push_str(&format!(
             "{:<13} {:<29} {:<9} {:<9} {}\n",
             it.get("slug").and_then(|x| x.as_str()).unwrap_or(""),
             truncate_cells(it.get("name").and_then(|x| x.as_str()).unwrap_or(""), 27),
-            it.get("rth_core_version").and_then(|x| x.as_str()).unwrap_or("-"),
+            it.get("rth_loop_version")
+                .and_then(|x| x.as_str())
+                .unwrap_or("-"),
             it.get("status").and_then(|x| x.as_str()).unwrap_or("-"),
-            it.get("agentic_status").and_then(|x| x.as_str()).unwrap_or("-"),
+            it.get("agentic_status")
+                .and_then(|x| x.as_str())
+                .unwrap_or("-"),
         ));
     }
     Ok(out)
@@ -2285,13 +2555,19 @@ pub fn rth_get(client: &Client, slug: &str, json_out: bool) -> Result<String, St
     ));
     out.push_str(&format!("slug        : {slug}\n"));
     out.push_str(&format!(
-        "RTHCore     : {}\n",
-        item.get("rth_core_version").and_then(|x| x.as_str()).unwrap_or("-")
+        "RTHLoop     : {}\n",
+        item.get("rth_loop_version")
+            .and_then(|x| x.as_str())
+            .unwrap_or("-")
     ));
     out.push_str(&format!(
         "Agentic     : {} {}\n",
-        item.get("agentic_status").and_then(|x| x.as_str()).unwrap_or("-"),
-        item.get("agentic_score").map(|s| s.to_string()).unwrap_or_default()
+        item.get("agentic_status")
+            .and_then(|x| x.as_str())
+            .unwrap_or("-"),
+        item.get("agentic_score")
+            .map(|s| s.to_string())
+            .unwrap_or_default()
     ));
     if let Some(key) = item.get("signing_public_key").and_then(|x| x.as_str()) {
         out.push_str(&format!("signing key : {key}\n"));
@@ -2308,7 +2584,11 @@ pub fn rth_get(client: &Client, slug: &str, json_out: bool) -> Result<String, St
             ));
         }
     }
-    if let Some(ch) = v.get("links").and_then(|l| l.get("channel")).and_then(|x| x.as_str()) {
+    if let Some(ch) = v
+        .get("links")
+        .and_then(|l| l.get("channel"))
+        .and_then(|x| x.as_str())
+    {
         out.push_str(&format!("\nchannel: {ch}\n"));
     }
     Ok(out)
@@ -2326,8 +2606,12 @@ pub fn rth_channel(client: &Client, slug: &str, json_out: bool) -> Result<String
     let mut out = String::new();
     out.push_str(&format!(
         "RTH channel · {} → {} → device\n",
-        v.pointer("/service/provider").and_then(|x| x.as_str()).unwrap_or("RATSA AI"),
-        v.pointer("/system/harness").and_then(|x| x.as_str()).unwrap_or("RTH")
+        v.pointer("/service/provider")
+            .and_then(|x| x.as_str())
+            .unwrap_or("RATSA AI"),
+        v.pointer("/system/harness")
+            .and_then(|x| x.as_str())
+            .unwrap_or("RTH")
     ));
     out.push_str(&format!(
         "ready       : {}\n",
@@ -2336,7 +2620,13 @@ pub fn rth_channel(client: &Client, slug: &str, json_out: bool) -> Result<String
     if let Some(missing) = v.get("missing").and_then(|x| x.as_array()) {
         if !missing.is_empty() {
             out.push_str("missing     : ");
-            out.push_str(&missing.iter().filter_map(|x| x.as_str()).collect::<Vec<_>>().join(", "));
+            out.push_str(
+                &missing
+                    .iter()
+                    .filter_map(|x| x.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            );
             out.push('\n');
         }
     }
@@ -2354,8 +2644,15 @@ pub fn rth_channel(client: &Client, slug: &str, json_out: bool) -> Result<String
     Ok(out)
 }
 
-pub fn rth_verify(client: &Client, slug: &str, package_id: u64, json_out: bool) -> Result<String, String> {
-    let resp = client.get(&format!("/api/rth/projects/{slug}/packages/{package_id}/verify"))?;
+pub fn rth_verify(
+    client: &Client,
+    slug: &str,
+    package_id: u64,
+    json_out: bool,
+) -> Result<String, String> {
+    let resp = client.get(&format!(
+        "/api/rth/projects/{slug}/packages/{package_id}/verify"
+    ))?;
     if resp.status >= 400 {
         return Err(resp.error_message());
     }
@@ -2369,16 +2666,24 @@ pub fn rth_verify(client: &Client, slug: &str, package_id: u64, json_out: bool) 
         v.get("valid").and_then(|x| x.as_bool()).unwrap_or(false),
         v.get("admitted").and_then(|x| x.as_bool()).unwrap_or(false)
     ));
-    for c in v.get("checks").and_then(|x| x.as_array()).cloned().unwrap_or_default() {
+    for c in v
+        .get("checks")
+        .and_then(|x| x.as_array())
+        .cloned()
+        .unwrap_or_default()
+    {
         out.push_str(&format!(
             "  {} {}\n",
-            if c.get("ok").and_then(|x| x.as_bool()).unwrap_or(false) { "✓" } else { "✗" },
+            if c.get("ok").and_then(|x| x.as_bool()).unwrap_or(false) {
+                "✓"
+            } else {
+                "✗"
+            },
             c.get("id").and_then(|x| x.as_str()).unwrap_or("")
         ));
     }
     Ok(out)
 }
-
 
 // ---------------------------------------------------------------- RTH platform writes
 
@@ -2387,7 +2692,7 @@ pub fn rth_create(
     name: &str,
     summary: &str,
     description: &str,
-    core_version: &str,
+    loop_version: &str,
     repo: &str,
     docs: &str,
     sof: &str,
@@ -2399,7 +2704,7 @@ pub fn rth_create(
         "name": name,
         "summary": summary,
         "description": description,
-        "rth_core_version": core_version,
+        "rth_loop_version": loop_version,
         "repository_url": repo,
         "docs_url": docs,
         "sof_slug": sof,
@@ -2420,7 +2725,9 @@ pub fn rth_create(
         "  name  : {}\n  slug  : {}\n  key   : {}\n",
         item.get("name").and_then(|x| x.as_str()).unwrap_or(name),
         item.get("slug").and_then(|x| x.as_str()).unwrap_or("-"),
-        item.get("signing_public_key").and_then(|x| x.as_str()).unwrap_or("-"),
+        item.get("signing_public_key")
+            .and_then(|x| x.as_str())
+            .unwrap_or("-"),
     ));
     if let Some(web) = v.pointer("/links/web").and_then(|x| x.as_str()) {
         out.push_str(&format!("  web   : {web}\n"));
@@ -2455,7 +2762,14 @@ pub fn rth_package(
             ("description", description),
             ("metadata", metadata),
         ];
-        client.post_multipart(&path, "file", filename, "application/octet-stream", &extra, &bytes)?
+        client.post_multipart(
+            &path,
+            "file",
+            filename,
+            "application/octet-stream",
+            &extra,
+            &bytes,
+        )?
     } else {
         let body = json!({
             "name": name, "version": version, "kind": kind,
@@ -2483,7 +2797,12 @@ pub fn rth_package(
     ))
 }
 
-pub fn rth_sign(client: &Client, slug: &str, package_id: u64, json_out: bool) -> Result<String, String> {
+pub fn rth_sign(
+    client: &Client,
+    slug: &str,
+    package_id: u64,
+    json_out: bool,
+) -> Result<String, String> {
     let resp = client.post(
         &format!("/api/rth/projects/{slug}/packages/{package_id}/sign"),
         &json!({}),
@@ -2498,14 +2817,23 @@ pub fn rth_sign(client: &Client, slug: &str, package_id: u64, json_out: bool) ->
     Ok(format!(
         "RTH Signature\n  valid   : {}\n  status  : {}\n  algo    : {}\n  key id  : {}\n",
         v.get("valid").and_then(|x| x.as_bool()).unwrap_or(false),
-        v.pointer("/item/status").and_then(|x| x.as_str()).unwrap_or("-"),
-        v.pointer("/item/signature_algo").and_then(|x| x.as_str()).unwrap_or("-"),
-        v.pointer("/item/signature_key_id").and_then(|x| x.as_str()).unwrap_or("-"),
+        v.pointer("/item/status")
+            .and_then(|x| x.as_str())
+            .unwrap_or("-"),
+        v.pointer("/item/signature_algo")
+            .and_then(|x| x.as_str())
+            .unwrap_or("-"),
+        v.pointer("/item/signature_key_id")
+            .and_then(|x| x.as_str())
+            .unwrap_or("-"),
     ))
 }
 
 pub fn rth_validate(client: &Client, slug: &str, json_out: bool) -> Result<String, String> {
-    let resp = client.post(&format!("/api/rth/projects/{slug}/validate-agentic"), &json!({}))?;
+    let resp = client.post(
+        &format!("/api/rth/projects/{slug}/validate-agentic"),
+        &json!({}),
+    )?;
     if resp.status >= 400 {
         return Err(resp.error_message());
     }
@@ -2515,9 +2843,15 @@ pub fn rth_validate(client: &Client, slug: &str, json_out: bool) -> Result<Strin
     }
     Ok(format!(
         "Agentic validation\n  status : {}\n  score  : {}\n  grade  : {}\n",
-        v.pointer("/item/agentic_status").and_then(|x| x.as_str()).unwrap_or("-"),
-        v.pointer("/item/agentic_score").map(|x| x.to_string()).unwrap_or_else(|| "-".into()),
-        v.pointer("/result/readiness/grade").and_then(|x| x.as_str()).unwrap_or("-"),
+        v.pointer("/item/agentic_status")
+            .and_then(|x| x.as_str())
+            .unwrap_or("-"),
+        v.pointer("/item/agentic_score")
+            .map(|x| x.to_string())
+            .unwrap_or_else(|| "-".into()),
+        v.pointer("/result/readiness/grade")
+            .and_then(|x| x.as_str())
+            .unwrap_or("-"),
     ))
 }
 
@@ -2540,7 +2874,9 @@ pub fn rth_admit(
     Ok(format!(
         "Package {package_id} {}\n  status : {}\n",
         if reject { "已拒绝" } else { "已准入" },
-        v.pointer("/item/status").and_then(|x| x.as_str()).unwrap_or("-")
+        v.pointer("/item/status")
+            .and_then(|x| x.as_str())
+            .unwrap_or("-")
     ))
 }
 
@@ -2552,8 +2888,21 @@ const RTH_STATE: &str = ".rth";
 fn valid_rth_kind(kind: &str) -> bool {
     matches!(
         kind,
-        "rth-core" | "rth-plugin" | "bsp" | "suite" | "sdk" | "hal" | "os" | "kernel"
-            | "layer" | "perception" | "ontology" | "mem" | "service" | "other"
+        "rth-loop"
+            | "rth-core"
+            | "rth-plugin"
+            | "bsp"
+            | "suite"
+            | "sdk"
+            | "hal"
+            | "os"
+            | "kernel"
+            | "layer"
+            | "perception"
+            | "ontology"
+            | "mem"
+            | "service"
+            | "other"
     )
 }
 
@@ -2610,8 +2959,14 @@ fn save_state(root: &Path, name: &str, value: &Value) -> Result<(), String> {
     fs::write(&path, raw + "\n").map_err(|e| format!("无法写入 {}：{e}", path.display()))
 }
 
-pub fn rth_init(dir: Option<&str>, name: Option<&str>, core_version: &str) -> Result<String, String> {
-    let root = dir.map(PathBuf::from).unwrap_or(std::env::current_dir().map_err(|e| e.to_string())?);
+pub fn rth_init(
+    dir: Option<&str>,
+    name: Option<&str>,
+    loop_version: &str,
+) -> Result<String, String> {
+    let root = dir
+        .map(PathBuf::from)
+        .unwrap_or(std::env::current_dir().map_err(|e| e.to_string())?);
     fs::create_dir_all(&root).map_err(|e| format!("无法创建 {}：{e}", root.display()))?;
     let manifest_path = rth_manifest_path(&root);
     if manifest_path.exists() {
@@ -2619,15 +2974,19 @@ pub fn rth_init(dir: Option<&str>, name: Option<&str>, core_version: &str) -> Re
     }
     let project = name
         .map(|x| x.to_string())
-        .or_else(|| root.file_name().and_then(|x| x.to_str()).map(|x| x.to_string()))
+        .or_else(|| {
+            root.file_name()
+                .and_then(|x| x.to_str())
+                .map(|x| x.to_string())
+        })
         .unwrap_or_else(|| "rth-project".into());
     let manifest = json!({
         "kind": "ratsa.rth.json",
         "spec_version": "rth/1.0",
         "name": project,
-        "rth_core_version": core_version,
+        "rth_loop_version": loop_version,
         "build_graph": {
-            "nodes": ["rth-core", "plugin", "perception", "ontology", "mem"],
+            "nodes": ["rth-loop", "plugin", "perception", "ontology", "mem"],
             "edges": []
         },
         "plugins": [],
@@ -2644,7 +3003,8 @@ pub fn rth_init(dir: Option<&str>, name: Option<&str>, core_version: &str) -> Re
         }
     });
     let raw = serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?;
-    fs::write(&manifest_path, raw + "\n").map_err(|e| format!("无法写入 {}：{e}", manifest_path.display()))?;
+    fs::write(&manifest_path, raw + "\n")
+        .map_err(|e| format!("无法写入 {}：{e}", manifest_path.display()))?;
     save_state(&root, "plugins.json", &json!([]))?;
     save_state(
         &root,
@@ -2657,7 +3017,7 @@ pub fn rth_init(dir: Option<&str>, name: Option<&str>, core_version: &str) -> Re
         &json!({
             "kind": "ratsa.rth.runtime",
             "spec_version": "rth/1.0",
-            "rth_core_version": core_version,
+            "rth_loop_version": loop_version,
             "created_at": now_unix()
         }),
     )?;
@@ -2683,7 +3043,7 @@ pub fn rth_status(dir: Option<&str>, json_out: bool) -> Result<String, String> {
         "root": root,
         "name": manifest.get("name"),
         "spec_version": manifest.get("spec_version"),
-        "rth_core_version": manifest.get("rth_core_version"),
+        "rth_loop_version": manifest.get("rth_loop_version").or_else(|| manifest.get("rth_core_version")),
         "plugins": plugins.as_array().map(|x| x.len()).unwrap_or(0),
         "perception": manifest.get("perception").and_then(|x| x.as_array()).map(|x| x.len()).unwrap_or(0),
         "build_nodes": manifest.pointer("/build_graph/nodes").and_then(|x| x.as_array()).map(|x| x.len()).unwrap_or(0),
@@ -2696,11 +3056,15 @@ pub fn rth_status(dir: Option<&str>, json_out: bool) -> Result<String, String> {
         return Ok(serde_json::to_string_pretty(&summary).unwrap_or_default());
     }
     Ok(format!(
-        "RTH runtime · {}\n  root        : {}\n  spec        : {}\n  RTHCore     : {}\n  plugins     : {}\n  perception  : {}\n  build nodes : {}\n  ontology    : {}\n",
+        "RTH runtime · {}\n  root        : {}\n  spec        : {}\n  RTHLoop     : {}\n  plugins     : {}\n  perception  : {}\n  build nodes : {}\n  ontology    : {}\n",
         manifest.get("name").and_then(|x| x.as_str()).unwrap_or("-"),
         root.display(),
         manifest.get("spec_version").and_then(|x| x.as_str()).unwrap_or("-"),
-        manifest.get("rth_core_version").and_then(|x| x.as_str()).unwrap_or("-"),
+        manifest
+            .get("rth_loop_version")
+            .or_else(|| manifest.get("rth_core_version"))
+            .and_then(|x| x.as_str())
+            .unwrap_or("-"),
         summary.get("plugins").map(|x| x.to_string()).unwrap_or_else(|| "0".into()),
         summary.get("perception").map(|x| x.to_string()).unwrap_or_else(|| "0".into()),
         summary.get("build_nodes").map(|x| x.to_string()).unwrap_or_else(|| "0".into()),
@@ -2763,7 +3127,9 @@ pub fn rth_plugin_add(
         }));
     }
     save_state(&root, "plugins.json", &Value::Array(items))?;
-    Ok(format!("插件 {id}@{version} 已登记（{kind}/{channel}）。\n"))
+    Ok(format!(
+        "插件 {id}@{version} 已登记（{kind}/{channel}）。\n"
+    ))
 }
 
 pub fn rth_plugin_update(dir: Option<&str>, id: &str, version: &str) -> Result<String, String> {
@@ -2799,7 +3165,9 @@ pub fn rth_plugin_remove(dir: Option<&str>, id: &str) -> Result<String, String> 
 fn valid_mem_store(store: &str) -> Result<(), String> {
     match store {
         "episodic" | "semantic" | "working" => Ok(()),
-        _ => Err(format!("未知 Mem store「{store}」，可选 episodic | semantic | working")),
+        _ => Err(format!(
+            "未知 Mem store「{store}」，可选 episodic | semantic | working"
+        )),
     }
 }
 
@@ -2815,7 +3183,11 @@ pub fn rth_mem_list(dir: Option<&str>, store: &str, json_out: bool) -> Result<St
     valid_mem_store(store)?;
     let root = rth_root(dir)?;
     let mem = mem_object(&root);
-    let items = mem.get(store).and_then(|x| x.as_object()).cloned().unwrap_or_default();
+    let items = mem
+        .get(store)
+        .and_then(|x| x.as_object())
+        .cloned()
+        .unwrap_or_default();
     if json_out {
         return Ok(serde_json::to_string_pretty(&Value::Object(items)).unwrap_or_default());
     }
@@ -2829,7 +3201,12 @@ pub fn rth_mem_list(dir: Option<&str>, store: &str, json_out: bool) -> Result<St
     Ok(out)
 }
 
-pub fn rth_mem_get(dir: Option<&str>, store: &str, key: &str, json_out: bool) -> Result<String, String> {
+pub fn rth_mem_get(
+    dir: Option<&str>,
+    store: &str,
+    key: &str,
+    json_out: bool,
+) -> Result<String, String> {
     valid_mem_store(store)?;
     let root = rth_root(dir)?;
     let mem = mem_object(&root);
@@ -2843,7 +3220,12 @@ pub fn rth_mem_get(dir: Option<&str>, store: &str, key: &str, json_out: bool) ->
     }
 }
 
-pub fn rth_mem_set(dir: Option<&str>, store: &str, key: &str, value: &str) -> Result<String, String> {
+pub fn rth_mem_set(
+    dir: Option<&str>,
+    store: &str,
+    key: &str,
+    value: &str,
+) -> Result<String, String> {
     valid_mem_store(store)?;
     let root = rth_root(dir)?;
     let mut mem = mem_object(&root);
@@ -2890,8 +3272,14 @@ pub fn rth_perception(dir: Option<&str>, json_out: bool) -> Result<String, Strin
         out.push_str(&format!(
             "{:<19} {:<11} {:<16} {}\n",
             truncate_cells(p.get("id").and_then(|x| x.as_str()).unwrap_or(""), 17),
-            truncate_cells(p.get("modality").and_then(|x| x.as_str()).unwrap_or("-"), 10),
-            truncate_cells(p.get("interface").and_then(|x| x.as_str()).unwrap_or("-"), 15),
+            truncate_cells(
+                p.get("modality").and_then(|x| x.as_str()).unwrap_or("-"),
+                10
+            ),
+            truncate_cells(
+                p.get("interface").and_then(|x| x.as_str()).unwrap_or("-"),
+                15
+            ),
             p.get("ontology_ref").and_then(|x| x.as_str()).unwrap_or(""),
         ));
     }
@@ -2909,7 +3297,12 @@ pub fn rth_ontology(dir: Option<&str>, json_out: bool) -> Result<String, String>
     if namespace.is_empty() {
         errors.push("ontology.namespace 不能为空".into());
     }
-    if onto.get("version").and_then(|x| x.as_str()).unwrap_or("").is_empty() {
+    if onto
+        .get("version")
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .is_empty()
+    {
         errors.push("ontology.version 不能为空".into());
     }
     match onto.get("entities") {
@@ -2949,8 +3342,16 @@ pub fn rth_build_graph(dir: Option<&str>, json_out: bool) -> Result<String, Stri
     if json_out {
         return Ok(serde_json::to_string_pretty(&graph).unwrap_or_default());
     }
-    let nodes = graph.get("nodes").and_then(|x| x.as_array()).cloned().unwrap_or_default();
-    let edges = graph.get("edges").and_then(|x| x.as_array()).cloned().unwrap_or_default();
+    let nodes = graph
+        .get("nodes")
+        .and_then(|x| x.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let edges = graph
+        .get("edges")
+        .and_then(|x| x.as_array())
+        .cloned()
+        .unwrap_or_default();
     let mut out = String::from("Build graph\n  nodes:\n");
     for n in nodes {
         out.push_str(&format!("    • {}\n", n.as_str().unwrap_or(&n.to_string())));
@@ -2964,7 +3365,9 @@ pub fn rth_build_graph(dir: Option<&str>, json_out: bool) -> Result<String, Stri
                 "    {} -> {} ({})\n",
                 e.get("from").and_then(|x| x.as_str()).unwrap_or("?"),
                 e.get("to").and_then(|x| x.as_str()).unwrap_or("?"),
-                e.get("type").and_then(|x| x.as_str()).unwrap_or("depends_on"),
+                e.get("type")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("depends_on"),
             ));
         }
     }
@@ -2985,13 +3388,20 @@ pub fn rth_platform(client: &Client, json_out: bool) -> Result<String, String> {
     let mut out = String::new();
     out.push_str(&format!(
         "RTH Platform · {}\n",
-        v.get("rth_core_version").and_then(|x| x.as_str()).unwrap_or("")
+        v.get("rth_loop_version")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
     ));
     if let Some(d) = v.get("definition").and_then(|x| x.as_str()) {
         out.push_str(&format!("{d}\n\n"));
     }
     out.push_str("Runtime modes\n");
-    for m in v.get("modes").and_then(|x| x.as_array()).cloned().unwrap_or_default() {
+    for m in v
+        .get("modes")
+        .and_then(|x| x.as_array())
+        .cloned()
+        .unwrap_or_default()
+    {
         out.push_str(&format!(
             "  • {} ({}) — {}\n",
             m.get("name").and_then(|x| x.as_str()).unwrap_or(""),
@@ -3000,7 +3410,12 @@ pub fn rth_platform(client: &Client, json_out: bool) -> Result<String, String> {
         ));
     }
     out.push_str("\nPackage families\n");
-    for p in v.get("package_families").and_then(|x| x.as_array()).cloned().unwrap_or_default() {
+    for p in v
+        .get("package_families")
+        .and_then(|x| x.as_array())
+        .cloned()
+        .unwrap_or_default()
+    {
         out.push_str(&format!(
             "  • {} [{}] — {}\n",
             p.get("name").and_then(|x| x.as_str()).unwrap_or(""),
@@ -3008,14 +3423,14 @@ pub fn rth_platform(client: &Client, json_out: bool) -> Result<String, String> {
             p.get("description").and_then(|x| x.as_str()).unwrap_or("")
         ));
     }
-    if let Some(u) = v.get("release_url_template").and_then(|x| x.as_str()) {
-        out.push_str(&format!("\nRelease URL: {u}\n"));
+    if let Some(u) = v.pointer("/release/cli").and_then(|x| x.as_str()) {
+        out.push_str(&format!("\nRelease (CLI): {u}\n"));
     }
     Ok(out)
 }
 
 pub fn rth_releases(client: &Client, slug: &str, json_out: bool) -> Result<String, String> {
-    let resp = client.get(&format!("/api/rth/projects/{slug}/releases"))?;
+    let resp = client.get(&format!("/api/rth/releases/{slug}"))?;
     if resp.status >= 400 {
         return Err(resp.error_message());
     }
@@ -3023,7 +3438,11 @@ pub fn rth_releases(client: &Client, slug: &str, json_out: bool) -> Result<Strin
     if json_out {
         return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
     }
-    let items = v.get("items").and_then(|x| x.as_array()).cloned().unwrap_or_default();
+    let items = v
+        .get("items")
+        .and_then(|x| x.as_array())
+        .cloned()
+        .unwrap_or_default();
     if items.is_empty() {
         return Ok("没有 Release。\n".into());
     }
@@ -3041,8 +3460,13 @@ pub fn rth_releases(client: &Client, slug: &str, json_out: bool) -> Result<Strin
     Ok(out)
 }
 
-pub fn rth_release(client: &Client, slug: &str, version: &str, json_out: bool) -> Result<String, String> {
-    let resp = client.get(&format!("/api/rth/projects/{slug}/releases/{version}"))?;
+pub fn rth_release(
+    client: &Client,
+    slug: &str,
+    version: &str,
+    json_out: bool,
+) -> Result<String, String> {
+    let resp = client.get(&format!("/api/rth/releases/{slug}/{version}"))?;
     if resp.status >= 400 {
         return Err(resp.error_message());
     }
@@ -3074,8 +3498,8 @@ pub fn rth_release(client: &Client, slug: &str, version: &str, json_out: bool) -
             ));
         }
     }
-    if let Some(u) = v.pointer("/links/web").and_then(|x| x.as_str()) {
-        out.push_str(&format!("\nweb: {u}\n"));
+    if let Some(u) = v.pointer("/links/cli").and_then(|x| x.as_str()) {
+        out.push_str(&format!("\nrefetch: {u}\n"));
     }
     Ok(out)
 }
@@ -3116,6 +3540,1134 @@ pub fn rth_publish(client: &Client, slug: &str, version: &str) -> Result<String,
     let v = resp.json();
     Ok(format!(
         "Release v{version} 已发布（status={})\n",
-        v.pointer("/item/status").and_then(|x| x.as_str()).unwrap_or("-")
+        v.pointer("/item/status")
+            .and_then(|x| x.as_str())
+            .unwrap_or("-")
     ))
+}
+
+// --------------------------------------------------- RTH user assets (profile)
+
+fn asset_error(resp: &api::Response) -> Option<String> {
+    if resp.status >= 400 {
+        Some(resp.error_message())
+    } else {
+        None
+    }
+}
+
+fn read_value_arg(raw: &str) -> Result<String, String> {
+    let raw = raw.trim();
+    if let Some(path) = raw.strip_prefix('@') {
+        return fs::read_to_string(path).map_err(|e| format!("无法读取 {path}: {e}"));
+    }
+    Ok(raw.to_string())
+}
+
+fn upload_content_type(path: &Path) -> &'static str {
+    match path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "zip" => "application/zip",
+        "gz" | "tgz" => "application/gzip",
+        "tar" => "application/x-tar",
+        "wasm" => "application/wasm",
+        "json" => "application/json",
+        "whl" => "application/zip",
+        _ => "application/octet-stream",
+    }
+}
+
+fn format_asset_checks(checks: &[Value]) -> String {
+    let mut out = String::new();
+    for ch in checks {
+        let mark = if ch.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
+            "✓"
+        } else {
+            "✗"
+        };
+        out.push_str(&format!(
+            "  {mark} {}{}\n",
+            ch.get("label").and_then(|v| v.as_str()).unwrap_or(""),
+            ch.get("detail")
+                .and_then(|v| v.as_str())
+                .filter(|d| !d.is_empty())
+                .map(|d| format!(" — {d}"))
+                .unwrap_or_default()
+        ));
+    }
+    out
+}
+
+fn format_asset_detail(v: &Value) -> String {
+    let item = v.get("item").cloned().unwrap_or(json!({}));
+    let mut out = String::new();
+    out.push_str(&format!(
+        "#{} {} v{} [{}] — {}\n",
+        item.get("id").and_then(|x| x.as_u64()).unwrap_or(0),
+        item.get("name").and_then(|x| x.as_str()).unwrap_or("-"),
+        item.get("version").and_then(|x| x.as_str()).unwrap_or("-"),
+        item.get("kind").and_then(|x| x.as_str()).unwrap_or("-"),
+        item.get("status").and_then(|x| x.as_str()).unwrap_or("-")
+    ));
+    if let Some(d) = item
+        .get("description")
+        .and_then(|x| x.as_str())
+        .filter(|d| !d.is_empty())
+    {
+        out.push_str(&format!("{d}\n"));
+    }
+    out.push_str(&format!(
+        "checksum : {}\nvisibility: {}\n",
+        item.get("checksum").and_then(|x| x.as_str()).unwrap_or("-"),
+        item.get("visibility")
+            .and_then(|x| x.as_str())
+            .unwrap_or("-")
+    ));
+    if let Some(r) = item
+        .get("repository_url")
+        .and_then(|x| x.as_str())
+        .filter(|r| !r.is_empty())
+    {
+        out.push_str(&format!("repo     : {r}\n"));
+    }
+    if let Some(sig) = item
+        .get("signature")
+        .and_then(|x| x.as_str())
+        .filter(|s| !s.is_empty())
+    {
+        out.push_str(&format!("signature: {}\n", api::truncate(sig, 32)));
+    }
+    if let Some(checks) = v.get("checks").and_then(|x| x.as_array()) {
+        out.push_str("\nchecks\n");
+        out.push_str(&format_asset_checks(checks));
+    }
+    out
+}
+
+/// `ratsa rth assets`
+pub fn rth_assets(
+    client: &Client,
+    status: Option<&str>,
+    kind: Option<&str>,
+    json_out: bool,
+) -> Result<String, String> {
+    let mut path = String::from("/api/rth/profile/assets");
+    let mut sep = '?';
+    if let Some(s) = status.filter(|s| !s.trim().is_empty()) {
+        path.push_str(&format!("{sep}status={}", urlencode(s)));
+        sep = '&';
+    }
+    if let Some(k) = kind.filter(|k| !k.trim().is_empty()) {
+        path.push_str(&format!("{sep}kind={}", urlencode(k)));
+    }
+    let resp = client.get(&path)?;
+    if let Some(e) = asset_error(&resp) {
+        return Err(e);
+    }
+    let v = resp.json();
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+    }
+    let items = v
+        .get("items")
+        .and_then(|x| x.as_array())
+        .cloned()
+        .unwrap_or_default();
+    if items.is_empty() {
+        return Ok(
+            "还没有 RTH 资产。用 `ratsa rth asset-upload --name … --file …` 上传。\n".into(),
+        );
+    }
+    let mut out =
+        String::from("ID    NAME                          VERSION   KIND          STATUS\n");
+    for it in items {
+        out.push_str(&format!(
+            "{:<5} {:<29} {:<9} {:<13} {}\n",
+            it.get("id").and_then(|x| x.as_u64()).unwrap_or(0),
+            truncate_cells(it.get("name").and_then(|x| x.as_str()).unwrap_or(""), 27),
+            it.get("version").and_then(|x| x.as_str()).unwrap_or("-"),
+            it.get("kind").and_then(|x| x.as_str()).unwrap_or("-"),
+            it.get("status").and_then(|x| x.as_str()).unwrap_or("-"),
+        ));
+    }
+    Ok(out)
+}
+
+/// `ratsa rth asset-upload`
+#[allow(clippy::too_many_arguments)]
+pub fn rth_asset_upload(
+    client: &Client,
+    name: &str,
+    version: &str,
+    kind: &str,
+    file: Option<&str>,
+    description: &str,
+    metadata: &str,
+    manifest: Option<&str>,
+    checksum: &str,
+    repo: &str,
+    license: &str,
+    signature: &str,
+    signature_key: &str,
+    visibility: &str,
+    json_out: bool,
+) -> Result<String, String> {
+    let metadata = read_value_arg(metadata)?;
+    if !metadata.is_empty() && serde_json::from_str::<Value>(&metadata).is_err() {
+        return Err("--metadata 不是合法 JSON".into());
+    }
+    let manifest_text = match manifest {
+        Some(path) if !path.trim().is_empty() => {
+            let text =
+                fs::read_to_string(path).map_err(|e| format!("无法读取 manifest {path}: {e}"))?;
+            if serde_json::from_str::<Value>(&text).is_err() {
+                return Err("--manifest 文件不是合法 JSON".into());
+            }
+            text
+        }
+        _ => String::new(),
+    };
+    let signature = read_value_arg(signature)?;
+    let signature_key = read_value_arg(signature_key)?;
+
+    let resp = if let Some(file) = file.filter(|f| !f.trim().is_empty()) {
+        let path = Path::new(file);
+        let data = fs::read(path).map_err(|e| format!("无法读取 {file}: {e}"))?;
+        let filename = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("asset.bin");
+        let extra_owned: Vec<(&str, String)> = vec![
+            ("name", name.to_string()),
+            ("version", version.to_string()),
+            ("kind", kind.to_string()),
+            ("description", description.to_string()),
+            ("metadata", metadata.clone()),
+            ("manifest", manifest_text.clone()),
+            ("checksum", checksum.to_string()),
+            ("repository_url", repo.to_string()),
+            ("license", license.to_string()),
+            ("signature", signature.clone()),
+            ("signature_public_key", signature_key.clone()),
+            ("visibility", visibility.to_string()),
+        ];
+        let extra: Vec<(&str, &str)> = extra_owned.iter().map(|(k, v)| (*k, v.as_str())).collect();
+        client.post_multipart(
+            "/api/rth/profile/assets",
+            "file",
+            filename,
+            upload_content_type(path),
+            &extra,
+            &data,
+        )?
+    } else {
+        let body = json!({
+            "name": name,
+            "version": version,
+            "kind": kind,
+            "description": description,
+            "metadata": metadata,
+            "manifest": manifest_text,
+            "checksum": checksum,
+            "repository_url": repo,
+            "license": license,
+            "signature": signature,
+            "signature_public_key": signature_key,
+            "visibility": visibility,
+        });
+        client.post("/api/rth/profile/assets", &body)?
+    };
+    if let Some(e) = asset_error(&resp) {
+        return Err(e);
+    }
+    let v = resp.json();
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+    }
+    let item = v.get("item").cloned().unwrap_or(json!({}));
+    let certified = v
+        .get("certified")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
+    let mut out = String::new();
+    out.push_str(&format!(
+        "{} #{} {} v{} ({})\n",
+        if certified {
+            "✓ 已认证"
+        } else {
+            "… 等待认证"
+        },
+        item.get("id").and_then(|x| x.as_u64()).unwrap_or(0),
+        item.get("name").and_then(|x| x.as_str()).unwrap_or("-"),
+        item.get("version").and_then(|x| x.as_str()).unwrap_or("-"),
+        item.get("kind").and_then(|x| x.as_str()).unwrap_or("-"),
+    ));
+    out.push_str(&format!(
+        "checksum: {}\n",
+        item.get("checksum").and_then(|x| x.as_str()).unwrap_or("-")
+    ));
+    if let Some(checks) = v.get("checks").and_then(|x| x.as_array()) {
+        out.push_str("\nchecks\n");
+        out.push_str(&format_asset_checks(checks));
+    }
+    if !certified {
+        out.push_str("\n账号通过认证后可执行 `ratsa rth asset-certify <id>` 重新认证。\n");
+    }
+    Ok(out)
+}
+
+/// `ratsa rth asset <id>`
+pub fn rth_asset(client: &Client, id: u64, json_out: bool) -> Result<String, String> {
+    let resp = client.get(&format!("/api/rth/profile/assets/{id}"))?;
+    if let Some(e) = asset_error(&resp) {
+        return Err(e);
+    }
+    let v = resp.json();
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+    }
+    Ok(format_asset_detail(&v))
+}
+
+/// `ratsa rth asset-certify <id>`
+pub fn rth_asset_certify(client: &Client, id: u64, json_out: bool) -> Result<String, String> {
+    let resp = client.post(&format!("/api/rth/profile/assets/{id}/certify"), &json!({}))?;
+    if let Some(e) = asset_error(&resp) {
+        return Err(e);
+    }
+    let v = resp.json();
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+    }
+    let certified = v
+        .get("certified")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
+    let mut out = format!(
+        "{}\n",
+        if certified {
+            "✓ 已认证"
+        } else {
+            "✗ 仍需修复"
+        }
+    );
+    if let Some(checks) = v.get("checks").and_then(|x| x.as_array()) {
+        out.push_str(&format_asset_checks(checks));
+    }
+    Ok(out)
+}
+
+/// `ratsa rth asset-delete <id>`
+pub fn rth_asset_delete(client: &Client, id: u64) -> Result<String, String> {
+    let resp = client.delete(&format!("/api/rth/profile/assets/{id}"))?;
+    if let Some(e) = asset_error(&resp) {
+        return Err(e);
+    }
+    Ok(format!("✓ 已删除资产 #{id}\n"))
+}
+
+/// `ratsa rth asset-download <id>`
+pub fn rth_asset_download(client: &Client, id: u64, out: &str) -> Result<String, String> {
+    let meta = client.get(&format!("/api/rth/profile/assets/{id}"))?;
+    if let Some(e) = asset_error(&meta) {
+        return Err(e);
+    }
+    let item = meta.json().get("item").cloned().unwrap_or(json!({}));
+    let expected = item
+        .get("checksum")
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .trim_start_matches("sha256:")
+        .to_string();
+    let file_name = item
+        .get("file_name")
+        .and_then(|x| x.as_str())
+        .filter(|n| !n.is_empty())
+        .map(|n| n.to_string())
+        .unwrap_or_else(|| format!("rth-asset-{id}.bin"));
+    let (bytes, _headers) = client.download(&format!("/api/rth/assets/{id}/download"))?;
+    let actual = sha256_hex(&bytes);
+    if !expected.is_empty() && expected != actual {
+        return Err(format!(
+            "校验失败：服务端 {expected}，本地 {actual}（不要使用这个文件）"
+        ));
+    }
+    let out_path = PathBuf::from(out);
+    let target = if out_path.is_dir() || out.ends_with('/') {
+        out_path.join(file_name)
+    } else {
+        out_path
+    };
+    if let Some(parent) = target.parent().filter(|p| !p.as_os_str().is_empty()) {
+        fs::create_dir_all(parent).map_err(|e| format!("无法创建 {}: {e}", parent.display()))?;
+    }
+    fs::write(&target, &bytes).map_err(|e| format!("无法写入 {}: {e}", target.display()))?;
+    Ok(format!(
+        "✓ 已下载 {}（{} 字节，sha256 校验通过）\n",
+        target.display(),
+        bytes.len()
+    ))
+}
+
+/// `ratsa rth asset-revoke <id>`
+pub fn rth_asset_revoke(client: &Client, id: u64, note: &str) -> Result<String, String> {
+    let resp = client.post(
+        &format!("/api/admin/rth/assets/{id}/revoke"),
+        &json!({ "note": note }),
+    )?;
+    if let Some(e) = asset_error(&resp) {
+        return Err(e);
+    }
+    Ok(format!("✓ 已撤销资产 #{id}\n"))
+}
+
+// ------------------------------------------------------------ rth-host (直连)
+
+struct HostReply {
+    status: u16,
+    body: String,
+}
+
+impl HostReply {
+    fn json(&self) -> Value {
+        serde_json::from_str(&self.body).unwrap_or_else(|_| json!({ "raw": self.body }))
+    }
+}
+
+fn resolve_host_target(platform: &Client, target: &str) -> Result<(String, String), String> {
+    let target = target.trim();
+    if target.is_empty() {
+        return Err("请用 --host <id|name|url> 指定 Host".into());
+    }
+    if target.starts_with("http://") || target.starts_with("https://") {
+        return Ok((target.trim_end_matches('/').to_string(), String::new()));
+    }
+    let item = if let Ok(id) = target.parse::<u64>() {
+        let resp = platform.get(&format!("/api/rth/hosts/{id}"))?;
+        if let Some(e) = asset_error(&resp) {
+            return Err(format!("{e}（用 `ratsa host list` 查看已登记的 Host）"));
+        }
+        resp.json().get("item").cloned().unwrap_or(json!({}))
+    } else {
+        let resp = platform.get("/api/rth/hosts")?;
+        if let Some(e) = asset_error(&resp) {
+            return Err(e);
+        }
+        resp.json()
+            .get("items")
+            .and_then(|x| x.as_array())
+            .and_then(|items| {
+                items
+                    .iter()
+                    .find(|it| it.get("name").and_then(|n| n.as_str()) == Some(target))
+                    .cloned()
+            })
+            .ok_or_else(|| format!("Host {target} 不存在（用 `ratsa host list` 查看）"))?
+    };
+    let url = item
+        .get("url")
+        .and_then(|x| x.as_str())
+        .filter(|u| !u.is_empty())
+        .ok_or_else(|| "平台返回的 Host 缺少 URL".to_string())?;
+    Ok((
+        url.trim_end_matches('/').to_string(),
+        item.get("name")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string(),
+    ))
+}
+
+fn host_call(
+    base: &str,
+    token: Option<&str>,
+    method: &str,
+    path: &str,
+    body: Option<Value>,
+) -> Result<HostReply, String> {
+    let agent = ureq::AgentBuilder::new()
+        .timeout_connect(std::time::Duration::from_secs(10))
+        .timeout_read(std::time::Duration::from_secs(60))
+        .user_agent(concat!("ratsa-harness/", env!("CARGO_PKG_VERSION")))
+        .build();
+    let url = format!("{base}{path}");
+    let mut req = match method {
+        "GET" => agent.get(&url),
+        "POST" => agent.post(&url),
+        "PUT" => agent.put(&url),
+        "DELETE" => agent.delete(&url),
+        other => return Err(format!("不支持的 Host 方法 {other}")),
+    };
+    if let Some(t) = token.filter(|t| !t.trim().is_empty()) {
+        req = req.set("Authorization", &format!("Bearer {t}"));
+    }
+    let result = match body {
+        Some(v) => req.send_json(v),
+        None => req.call(),
+    };
+    let resp = match result {
+        Ok(r) => r,
+        Err(ureq::Error::Status(_, r)) => r,
+        Err(ureq::Error::Transport(t)) => {
+            return Err(format!("无法连接 Host {base}：{t}"));
+        }
+    };
+    let status = resp.status();
+    let body = resp
+        .into_string()
+        .map_err(|e| format!("读取 Host 响应失败：{e}"))?;
+    Ok(HostReply { status, body })
+}
+
+fn host_json(
+    platform: &Client,
+    target: &str,
+    token: Option<&str>,
+    path: &str,
+    json_out: bool,
+) -> Result<(String, Value), String> {
+    let (base, _name) = resolve_host_target(platform, target)?;
+    let reply = host_call(&base, token, "GET", path, None)?;
+    if reply.status == 401 || reply.status == 403 {
+        return Err(format!(
+            "Host 拒绝访问（HTTP {}）。用 --token 或 RTH_HOST_TOKEN 提供 Host token。",
+            reply.status
+        ));
+    }
+    if reply.status >= 400 {
+        return Err(format!(
+            "Host 返回 HTTP {}：{}",
+            reply.status,
+            api::truncate(&reply.body, 300)
+        ));
+    }
+    let v = reply.json();
+    if json_out {
+        return Ok((serde_json::to_string_pretty(&v).unwrap_or_default(), v));
+    }
+    Ok((String::new(), v))
+}
+
+fn finish_host(label: &str, v: &Value, json_out: bool, human: impl Fn(&Value) -> String) -> String {
+    if json_out {
+        serde_json::to_string_pretty(v).unwrap_or_default()
+    } else {
+        format!("{label}\n{}", human(v))
+    }
+}
+
+/// `ratsa host add`
+pub fn host_add(
+    client: &Client,
+    name: &str,
+    url: &str,
+    description: &str,
+    capabilities: &str,
+    json_out: bool,
+) -> Result<String, String> {
+    let caps = api::parse_scopes(&[capabilities.to_string()]);
+    let resp = client.post(
+        "/api/rth/hosts",
+        &json!({ "name": name, "url": url, "description": description, "capabilities": caps }),
+    )?;
+    if let Some(e) = asset_error(&resp) {
+        return Err(e);
+    }
+    let v = resp.json();
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+    }
+    let item = v.get("item").cloned().unwrap_or(json!({}));
+    let caps = item
+        .get("capabilities")
+        .and_then(|x| x.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|c| c.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
+        .unwrap_or_default();
+    Ok(format!(
+        "✓ Host #{} {} → {}\n  capabilities: {}\n",
+        item.get("id").and_then(|x| x.as_u64()).unwrap_or(0),
+        item.get("name").and_then(|x| x.as_str()).unwrap_or("-"),
+        item.get("url").and_then(|x| x.as_str()).unwrap_or("-"),
+        caps
+    ))
+}
+
+/// `ratsa host list`
+pub fn host_list(client: &Client, json_out: bool) -> Result<String, String> {
+    let resp = client.get("/api/rth/hosts")?;
+    if let Some(e) = asset_error(&resp) {
+        return Err(e);
+    }
+    let v = resp.json();
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+    }
+    let items = v
+        .get("items")
+        .and_then(|x| x.as_array())
+        .cloned()
+        .unwrap_or_default();
+    if items.is_empty() {
+        return Ok(
+            "还没有登记 Host。用 `ratsa host add --name bench --url https://…` 登记。\n".into(),
+        );
+    }
+    let mut out = String::from(
+        "ID    NAME                 URL                                      CAPABILITIES\n",
+    );
+    for it in items {
+        let caps = it
+            .get("capabilities")
+            .and_then(|x| x.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|c| c.as_str())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            })
+            .unwrap_or_default();
+        out.push_str(&format!(
+            "{:<5} {:<20} {:<40} {}\n",
+            it.get("id").and_then(|x| x.as_u64()).unwrap_or(0),
+            truncate_cells(it.get("name").and_then(|x| x.as_str()).unwrap_or(""), 18),
+            truncate_cells(it.get("url").and_then(|x| x.as_str()).unwrap_or(""), 38),
+            caps
+        ));
+    }
+    Ok(out)
+}
+
+/// `ratsa host get`
+pub fn host_get(client: &Client, id: u64, json_out: bool) -> Result<String, String> {
+    let resp = client.get(&format!("/api/rth/hosts/{id}"))?;
+    if let Some(e) = asset_error(&resp) {
+        return Err(e);
+    }
+    let v = resp.json();
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+    }
+    let item = v.get("item").cloned().unwrap_or(json!({}));
+    let caps = item
+        .get("capabilities")
+        .and_then(|x| x.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|c| c.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
+        .unwrap_or_default();
+    Ok(format!(
+        "#{} {}\nurl         : {}\ncapabilities: {}\n",
+        item.get("id").and_then(|x| x.as_u64()).unwrap_or(0),
+        item.get("name").and_then(|x| x.as_str()).unwrap_or("-"),
+        item.get("url").and_then(|x| x.as_str()).unwrap_or("-"),
+        caps
+    ))
+}
+
+/// `ratsa host remove`
+pub fn host_remove(client: &Client, id: u64) -> Result<String, String> {
+    let resp = client.delete(&format!("/api/rth/hosts/{id}"))?;
+    if let Some(e) = asset_error(&resp) {
+        return Err(e);
+    }
+    Ok(format!("✓ 已删除 Host #{id}（Host Server 本身未受影响）\n"))
+}
+
+/// `ratsa host status`
+pub fn host_status(
+    platform: &Client,
+    target: &str,
+    token: Option<&str>,
+    json_out: bool,
+) -> Result<String, String> {
+    let (base, name) = resolve_host_target(platform, target)?;
+    let reply = host_call(&base, token, "GET", "/api/v1/host/status", None)?;
+    if reply.status == 401 || reply.status == 403 {
+        return Err(format!(
+            "Host 拒绝访问（HTTP {}）。用 --token 或 RTH_HOST_TOKEN 提供 Host token。",
+            reply.status
+        ));
+    }
+    if reply.status >= 400 {
+        return Err(format!(
+            "Host 返回 HTTP {}：{}",
+            reply.status,
+            api::truncate(&reply.body, 300)
+        ));
+    }
+    let v = reply.json();
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+    }
+    let caps = v
+        .get("capabilities")
+        .and_then(|x| x.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|c| c.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
+        .unwrap_or_default();
+    let label = if name.is_empty() {
+        base.clone()
+    } else {
+        format!("{name} ({base})")
+    };
+    Ok(format!(
+        "{label}\n  version     : {}\n  profile     : {}\n  rthd / rtm  : {} / {}\n  capabilities: {}\n  programs    : {}\n",
+        v.get("version").and_then(|x| x.as_str()).unwrap_or("-"),
+        v.get("profile").and_then(|x| x.as_str()).unwrap_or("-"),
+        if v.get("rthd_reachable").and_then(|x| x.as_bool()).unwrap_or(false) { "✓" } else { "✗" },
+        if v.get("rtm_reachable").and_then(|x| x.as_bool()).unwrap_or(false) { "✓" } else { "✗" },
+        caps,
+        v.get("programs").and_then(|x| x.as_array()).map(|a| a.len()).unwrap_or(0),
+    ))
+}
+
+/// `ratsa host programs`
+pub fn host_programs(
+    platform: &Client,
+    target: &str,
+    token: Option<&str>,
+    json_out: bool,
+) -> Result<String, String> {
+    let (base, name) = resolve_host_target(platform, target)?;
+    let reply = host_call(&base, token, "GET", "/api/v1/programs", None)?;
+    if reply.status >= 400 {
+        return Err(format!(
+            "Host 返回 HTTP {}：{}",
+            reply.status,
+            api::truncate(&reply.body, 300)
+        ));
+    }
+    let v = reply.json();
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+    }
+    let items = v.as_array().cloned().unwrap_or_default();
+    let label = if name.is_empty() {
+        base
+    } else {
+        format!("{name} ({base})")
+    };
+    let mut out = format!("{label}\n");
+    if items.is_empty() {
+        out.push_str("  （没有程序）\n");
+        return Ok(out);
+    }
+    out.push_str("  NAME                      STATE       HEALTH      PID      UPTIME\n");
+    for it in items {
+        out.push_str(&format!(
+            "  {:<25} {:<11} {:<11} {:<8} {}\n",
+            truncate_cells(it.get("name").and_then(|x| x.as_str()).unwrap_or(""), 23),
+            it.get("state").and_then(|x| x.as_str()).unwrap_or("-"),
+            it.get("health").and_then(|x| x.as_str()).unwrap_or("-"),
+            it.get("pid")
+                .and_then(|x| x.as_u64())
+                .map(|p| p.to_string())
+                .unwrap_or_else(|| "-".into()),
+            it.get("uptime_secs").and_then(|x| x.as_u64()).unwrap_or(0),
+        ));
+    }
+    Ok(out)
+}
+
+/// `ratsa host program`
+pub fn host_program(
+    platform: &Client,
+    target: &str,
+    program: &str,
+    action: &str,
+    token: Option<&str>,
+    json_out: bool,
+) -> Result<String, String> {
+    let action = action.trim().to_ascii_lowercase();
+    if !matches!(action.as_str(), "start" | "stop" | "restart") {
+        return Err("--action 只支持 start | stop | restart".into());
+    }
+    let (base, name) = resolve_host_target(platform, target)?;
+    let path = format!("/api/v1/programs/{}/{}", urlencode(program), action);
+    let reply = host_call(&base, token, "POST", &path, None)?;
+    if reply.status >= 400 {
+        return Err(format!(
+            "Host 返回 HTTP {}：{}",
+            reply.status,
+            api::truncate(&reply.body, 300)
+        ));
+    }
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&reply.json()).unwrap_or_default());
+    }
+    let label = if name.is_empty() {
+        base
+    } else {
+        format!("{name} ({base})")
+    };
+    Ok(format!("✓ {label} · {program} → {action}\n"))
+}
+
+/// `ratsa host events`
+pub fn host_events(
+    platform: &Client,
+    target: &str,
+    limit: usize,
+    token: Option<&str>,
+    json_out: bool,
+) -> Result<String, String> {
+    let path = format!("/api/v1/events?limit={limit}");
+    let (human, v) = host_json(platform, target, token, &path, json_out)?;
+    if json_out {
+        return Ok(human);
+    }
+    Ok(finish_host("events", &v, false, |v| {
+        serde_json::to_string_pretty(v).unwrap_or_default()
+    }))
+}
+
+/// `ratsa host signals`
+pub fn host_signals(
+    platform: &Client,
+    target: &str,
+    limit: usize,
+    token: Option<&str>,
+    json_out: bool,
+) -> Result<String, String> {
+    let path = format!("/api/v1/signals?limit={limit}");
+    let (human, v) = host_json(platform, target, token, &path, json_out)?;
+    if json_out {
+        return Ok(human);
+    }
+    Ok(finish_host("signals", &v, false, |v| {
+        serde_json::to_string_pretty(v).unwrap_or_default()
+    }))
+}
+
+/// `ratsa host signal`
+pub fn host_signal(
+    platform: &Client,
+    target: &str,
+    payload: &str,
+    token: Option<&str>,
+    json_out: bool,
+) -> Result<String, String> {
+    let raw = read_value_arg(payload)?;
+    let body: Value =
+        serde_json::from_str(&raw).map_err(|e| format!("--payload 不是合法 JSON：{e}"))?;
+    let (base, name) = resolve_host_target(platform, target)?;
+    let reply = host_call(&base, token, "POST", "/api/v1/signals", Some(body))?;
+    let status = reply.status;
+    // A signal rejected by device policy is a 409 with the decision record.
+    if status >= 400 && status != 409 {
+        return Err(format!(
+            "Host 返回 HTTP {status}：{}",
+            api::truncate(&reply.body, 300)
+        ));
+    }
+    let v = reply.json();
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+    }
+    let label = if name.is_empty() {
+        base
+    } else {
+        format!("{name} ({base})")
+    };
+    let accepted = v
+        .get("accepted")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(status < 400);
+    Ok(format!(
+        "{} {label} · signal → {}\n{}\n",
+        if accepted {
+            "✓ 已接受"
+        } else {
+            "✗ 被拒绝"
+        },
+        if accepted { "accepted" } else { "rejected" },
+        serde_json::to_string_pretty(&v).unwrap_or_default()
+    ))
+}
+
+/// `ratsa host harness`
+pub fn host_harness(
+    platform: &Client,
+    target: &str,
+    token: Option<&str>,
+    json_out: bool,
+) -> Result<String, String> {
+    let (human, v) = host_json(platform, target, token, "/api/v1/harness", json_out)?;
+    if json_out {
+        return Ok(human);
+    }
+    Ok(finish_host("harness", &v, false, |v| {
+        serde_json::to_string_pretty(v).unwrap_or_default()
+    }))
+}
+
+/// `ratsa host agent`
+pub fn host_agent(
+    platform: &Client,
+    target: &str,
+    text: &str,
+    source: &str,
+    intent: Option<&str>,
+    token: Option<&str>,
+    json_out: bool,
+) -> Result<String, String> {
+    if text.trim().is_empty() {
+        return Err("--text 不能为空".into());
+    }
+    let (base, name) = resolve_host_target(platform, target)?;
+    let mut body = json!({ "text": text, "source": source });
+    if let Some(intent) = intent.filter(|i| !i.trim().is_empty()) {
+        body["intent"] = json!(intent);
+    }
+    let reply = host_call(
+        &base,
+        token,
+        "POST",
+        "/api/v1/harness/instruction",
+        Some(body),
+    )?;
+    if reply.status >= 400 {
+        return Err(format!(
+            "Host 返回 HTTP {}：{}",
+            reply.status,
+            api::truncate(&reply.body, 300)
+        ));
+    }
+    let v = reply.json();
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+    }
+    let label = if name.is_empty() {
+        base
+    } else {
+        format!("{name} ({base})")
+    };
+    Ok(format!(
+        "✓ {label} · agent instruction accepted\n{}\n",
+        serde_json::to_string_pretty(&v).unwrap_or_default()
+    ))
+}
+
+/// `ratsa host event`
+pub fn host_event(
+    platform: &Client,
+    target: &str,
+    event: &str,
+    reason: Option<&str>,
+    token: Option<&str>,
+    json_out: bool,
+) -> Result<String, String> {
+    if event.trim().is_empty() {
+        return Err("--event 不能为空".into());
+    }
+    let (base, name) = resolve_host_target(platform, target)?;
+    let mut body = json!({ "event": event });
+    if let Some(reason) = reason.filter(|r| !r.trim().is_empty()) {
+        body["reason"] = json!(reason);
+    }
+    let reply = host_call(&base, token, "POST", "/api/v1/harness/event", Some(body))?;
+    if reply.status >= 400 {
+        return Err(format!(
+            "Host 返回 HTTP {}：{}",
+            reply.status,
+            api::truncate(&reply.body, 300)
+        ));
+    }
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&reply.json()).unwrap_or_default());
+    }
+    let label = if name.is_empty() {
+        base
+    } else {
+        format!("{name} ({base})")
+    };
+    Ok(format!("✓ {label} · event {event}\n"))
+}
+
+/// `ratsa host tick`
+pub fn host_tick(
+    platform: &Client,
+    target: &str,
+    token: Option<&str>,
+    json_out: bool,
+) -> Result<String, String> {
+    let (base, name) = resolve_host_target(platform, target)?;
+    let reply = host_call(&base, token, "POST", "/api/v1/harness/tick", None)?;
+    if reply.status >= 400 {
+        return Err(format!(
+            "Host 返回 HTTP {}：{}",
+            reply.status,
+            api::truncate(&reply.body, 300)
+        ));
+    }
+    let v = reply.json();
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+    }
+    let label = if name.is_empty() {
+        base
+    } else {
+        format!("{name} ({base})")
+    };
+    Ok(format!(
+        "✓ {label} · tick\n{}\n",
+        serde_json::to_string_pretty(&v).unwrap_or_default()
+    ))
+}
+
+/// `ratsa rth asset-update <id>`
+pub fn rth_asset_update(
+    client: &Client,
+    id: u64,
+    description: Option<&str>,
+    repo: Option<&str>,
+    license: Option<&str>,
+    visibility: Option<&str>,
+    json_out: bool,
+) -> Result<String, String> {
+    let mut body = serde_json::Map::new();
+    if let Some(v) = description {
+        body.insert("description".into(), json!(v));
+    }
+    if let Some(v) = repo {
+        body.insert("repository_url".into(), json!(v));
+    }
+    if let Some(v) = license {
+        body.insert("license".into(), json!(v));
+    }
+    if let Some(v) = visibility {
+        body.insert("visibility".into(), json!(v));
+    }
+    if body.is_empty() {
+        return Err("至少提供一个字段：--description / --repo / --license / --visibility".into());
+    }
+    let resp = client.patch(
+        &format!("/api/rth/profile/assets/{id}"),
+        &Value::Object(body),
+    )?;
+    if let Some(e) = asset_error(&resp) {
+        return Err(e);
+    }
+    let v = resp.json();
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+    }
+    Ok(format_asset_detail(&v))
+}
+
+/// `ratsa host update <id>`
+pub fn host_update(
+    client: &Client,
+    id: u64,
+    name: Option<&str>,
+    url: Option<&str>,
+    description: Option<&str>,
+    capabilities: Option<&str>,
+    json_out: bool,
+) -> Result<String, String> {
+    let mut body = serde_json::Map::new();
+    if let Some(v) = name {
+        body.insert("name".into(), json!(v));
+    }
+    if let Some(v) = url {
+        body.insert("url".into(), json!(v));
+    }
+    if let Some(v) = description {
+        body.insert("description".into(), json!(v));
+    }
+    if let Some(v) = capabilities {
+        body.insert(
+            "capabilities".into(),
+            json!(api::parse_scopes(&[v.to_string()])),
+        );
+    }
+    if body.is_empty() {
+        return Err("至少提供一个字段：--name / --url / --description / --capabilities".into());
+    }
+    let resp = client.put(&format!("/api/rth/hosts/{id}"), &Value::Object(body))?;
+    if let Some(e) = asset_error(&resp) {
+        return Err(e);
+    }
+    let v = resp.json();
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+    }
+    let item = v.get("item").cloned().unwrap_or(json!({}));
+    let caps = item
+        .get("capabilities")
+        .and_then(|x| x.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|c| c.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
+        .unwrap_or_default();
+    Ok(format!(
+        "✓ Host #{} {} → {}\n  capabilities: {}\n",
+        item.get("id").and_then(|x| x.as_u64()).unwrap_or(0),
+        item.get("name").and_then(|x| x.as_str()).unwrap_or("-"),
+        item.get("url").and_then(|x| x.as_str()).unwrap_or("-"),
+        caps
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn upload_content_type_covers_archives_and_sdks() {
+        assert_eq!(
+            upload_content_type(Path::new("plugin.zip")),
+            "application/zip"
+        );
+        assert_eq!(
+            upload_content_type(Path::new("sdk.tar.gz")),
+            "application/gzip"
+        );
+        assert_eq!(upload_content_type(Path::new("sdk.whl")), "application/zip");
+        assert_eq!(
+            upload_content_type(Path::new("blob.bin")),
+            "application/octet-stream"
+        );
+    }
+
+    #[test]
+    fn read_value_arg_supports_at_file() {
+        let path = std::env::temp_dir().join(format!("ratsa-arg-{}.json", std::process::id()));
+        fs::write(&path, "{\"a\":1}").unwrap();
+        let got = read_value_arg(&format!("@{}", path.display())).unwrap();
+        assert_eq!(got, "{\"a\":1}");
+        let _ = fs::remove_file(path);
+        assert_eq!(read_value_arg("plain").unwrap(), "plain");
+    }
+
+    #[test]
+    fn asset_checks_mark_failures() {
+        let checks = vec![
+            json!({"id":"checksum","label":"SHA-256","ok":true}),
+            json!({"id":"account","label":"账号认证","ok":false,"detail":"未认证"}),
+        ];
+        let out = format_asset_checks(&checks);
+        assert!(out.contains("✓ SHA-256"));
+        assert!(out.contains("✗ 账号认证 — 未认证"));
+    }
 }

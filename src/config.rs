@@ -120,10 +120,12 @@ impl Config {
     pub fn save(&self) -> Result<(), String> {
         let path = config_path();
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|e| format!("无法创建 {}: {e}", parent.display()))?;
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("无法创建 {}: {e}", parent.display()))?;
         }
         let raw = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
-        let mut file = fs::File::create(&path).map_err(|e| format!("无法写入 {}: {e}", path.display()))?;
+        let mut file =
+            fs::File::create(&path).map_err(|e| format!("无法写入 {}: {e}", path.display()))?;
         file.write_all(raw.as_bytes()).map_err(|e| e.to_string())?;
         file.write_all(b"\n").map_err(|e| e.to_string())?;
         #[cfg(unix)]

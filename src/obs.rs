@@ -49,7 +49,12 @@ pub struct Object {
 /// `bytes` 整块读进内存：单文件上限 50MiB（服务端常量），这个量级可以接受；
 /// 换成流式反而要处理 ureq 的 chunked 编码，而 OBS 对「已签名的固定载荷」
 /// 不接受 chunked（除非改用 `STREAMING-AWS4-HMAC-SHA256-PAYLOAD` 那套，成本陡增）。
-pub fn put_object(t: &Ticket, key: &str, bytes: &[u8], content_type: &str) -> Result<String, String> {
+pub fn put_object(
+    t: &Ticket,
+    key: &str,
+    bytes: &[u8],
+    content_type: &str,
+) -> Result<String, String> {
     let host = host_of(&t.endpoint)?;
     // 虚拟主机式 = 桶名作子域（OBS 控制台「访问域名」就是这个形态）；
     // 路径式则把桶名放进路径。**以服务端下发的 path_style 为准**。
@@ -58,7 +63,11 @@ pub fn put_object(t: &Ticket, key: &str, bytes: &[u8], content_type: &str) -> Re
     } else {
         (format!("{}.{}", t.bucket, host), format!("/{}", key))
     };
-    let scheme = if t.endpoint.starts_with("http://") { "http" } else { "https" };
+    let scheme = if t.endpoint.starts_with("http://") {
+        "http"
+    } else {
+        "https"
+    };
     let url = format!("{scheme}://{vhost}{path}");
 
     let payload_hash = hex(digest::digest(&digest::SHA256, bytes).as_ref());
@@ -79,9 +88,7 @@ pub fn put_object(t: &Ticket, key: &str, bytes: &[u8], content_type: &str) -> Re
 
     // 键只含 `[a-z0-9._/-]`（服务端 sanitize 过），所以 canonical URI
     // **逐字节等于**实际路径 —— SigV4 的 URI 编码坑在这里无从发生。
-    let canonical_request = format!(
-        "PUT\n{path}\n\n{canonical_headers}\n{SIGNED}\n{payload_hash}"
-    );
+    let canonical_request = format!("PUT\n{path}\n\n{canonical_headers}\n{SIGNED}\n{payload_hash}");
     let scope = format!("{date_stamp}/{region}/s3/aws4_request", region = t.region);
     let string_to_sign = format!(
         "AWS4-HMAC-SHA256\n{amz_date}\n{scope}\n{}",
@@ -162,10 +169,11 @@ fn hmac_sha256(key: &[u8], data: &[u8]) -> Vec<u8> {
 
 fn hex(b: &[u8]) -> String {
     use std::fmt::Write;
-    b.iter().fold(String::with_capacity(b.len() * 2), |mut s, x| {
-        let _ = write!(s, "{x:02x}");
-        s
-    })
+    b.iter()
+        .fold(String::with_capacity(b.len() * 2), |mut s, x| {
+            let _ = write!(s, "{x:02x}");
+            s
+        })
 }
 
 // ————————————————————————————————————————————————————————————— UTC 时间

@@ -89,7 +89,16 @@ The MCP tool surface is exposed at the same time, so an Agent never has to memor
 | `package` | **Generate the device Harness package server-side** and download it; `--meta` describes it only (files / readiness / size); `--version` pins a historical SOF version |
 | `sof-file` | Fetch the SOF file (`kind=ratsa.sof.json`, can be posted straight back to `POST /api/sof`); `--version` exports a historical version |
 | `rth` | RTH platform: `platform` / `spec` / `projects` / `get` / `channel` / `verify` / `create` / `package` / `sign` / `validate` / `admit` / `reject` / `releases` / `release` / `release-create` / `publish` |
+| `rth assets` / `asset-upload` / `asset` / `asset-update` / `asset-certify` / `asset-download` / `asset-delete` | Account-level RTH plugins / SDKs / packages: upload, auto-certification checks, edit visibility/repo, download (sha256 verified), delete; `asset-revoke` for admins |
 | `rth init/status/...` | Run **inside RTH**: `init` / `status` / `plugin` / `mem` / `perception` / `ontology` / `build-graph`, backed by `ratsa.rth.json` + `.rth/` |
+| `host init` | Generate `~/.ratsa/host/host.toml` (bind / token / profile / rthd + rtm / memory / SOF API); token is generated and written 0600 |
+| `host install` | Install the standalone `rthost` component to `~/.ratsa/bin/rthost` from `--bin` or `--from-source <rthcore>` |
+| `host run` / `host doctor` | Run the component in the foreground / check config, binary, Host `/health`, rthd and rtm |
+| `host service install/start/stop/restart/status/logs/uninstall` | Supervise the component with a systemd user unit (Linux) or LaunchAgent (macOS); logs via journalctl / launchd log file |
+| `host config show` | Print the local component config (tokens redacted unless `--reveal`) |
+| `host publish` | Register the local component on the platform using the config bind/profile (URL + capabilities only) |
+| `host add/list/get/update/remove` | Register an rth-host Server URL + capabilities on the platform (tokens are never stored) |
+| `host status/programs/program/events/signals/signal/harness/agent/event/tick` | Connect **directly** to the registered (or `--host <url>`) Host Server with `--token` / `RTH_HOST_TOKEN`; device control + Harness agent behavior |
 | `pull` | Pull any kind: `--kind device\|eval-repo\|service`, written to `~/.ratsa/packages/<slug>/<kind>/`; `--version` for device packages |
 | `kb` | Pull the SOF knowledge base: index by default, `--sof <slug>` for a device level, `--doc <key\|slug>` prints or saves the Markdown (checksum verified) |
 | `report` | Report a measured run (`source=agent`) into the device's Harness Eval |
@@ -106,6 +115,34 @@ leaving the existing binary untouched) if the checksum does not match.
 
 Environment variables (handy for CI / containers, no config file needed):
 `RATSA_BASE_URL`, `RATSA_KEY_ID`, `RATSA_KEY_SECRET`, `RATSA_CONFIG`, `RATSA_HOME`, `RATSA_PASSWORD`.
+
+## rthost component lifecycle
+
+`rthost` is the Host Server component the CLI runs next to a device or bench.
+It is installed locally, configured from a TOML file, and can be supervised by
+systemd (Linux) or launchd (macOS). The platform only ever gets the Host URL and
+capabilities; the Host token and rthd/rtm credentials stay in
+`~/.ratsa/host/host.toml` (0600).
+
+```bash
+# 1) config + token
+ratsa host init --profile operator --bind 127.0.0.1:9780
+# 2) install the component (build once from the RTH workspace)
+ratsa host install --from-source /path/to/rthcore
+# 3) check config / binary / Host /health / rthd / rtm
+ratsa host doctor
+# 4) run in the foreground, or install a service
+ratsa host run
+ratsa host service install --dry-run   # inspect the unit/plist first
+ratsa host service install
+ratsa host service status
+ratsa host service logs --follow
+ratsa host publish --name bench --url https://bench.example.com:9780
+```
+
+The first `--from-source` install runs `cargo build --release -p rthost --features bin`.
+After that, `host run`/`host service` use `~/.ratsa/bin/rthost` (or
+`--bin` / `RTHOST_BIN`).
 
 ## Permission table (key / secret scopes)
 

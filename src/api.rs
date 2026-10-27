@@ -39,10 +39,7 @@ impl Response {
     /// machine `code` for the interesting cases (missing_scope, login_required…).
     pub fn error_message(&self) -> String {
         let v = self.json();
-        let msg = v
-            .get("error")
-            .and_then(|e| e.as_str())
-            .unwrap_or("");
+        let msg = v.get("error").and_then(|e| e.as_str()).unwrap_or("");
         let code = v.get("code").and_then(|e| e.as_str()).unwrap_or("");
         match (msg.is_empty(), code.is_empty()) {
             (false, false) => format!("{msg}（{code}）"),
@@ -99,7 +96,9 @@ impl Client {
         match result {
             Ok(resp) => read(resp),
             Err(ureq::Error::Status(_, resp)) => read(resp),
-            Err(ureq::Error::Transport(t)) => Err(format!("网络错误：{t}（base_url={}）", self.base)),
+            Err(ureq::Error::Transport(t)) => {
+                Err(format!("网络错误：{t}（base_url={}）", self.base))
+            }
         }
     }
 
@@ -168,9 +167,10 @@ impl Client {
         body.extend_from_slice(data);
         body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
 
-        let req = self
-            .decorate(self.agent.post(&url))
-            .set("Content-Type", &format!("multipart/form-data; boundary={boundary}"));
+        let req = self.decorate(self.agent.post(&url)).set(
+            "Content-Type",
+            &format!("multipart/form-data; boundary={boundary}"),
+        );
         match req.send_bytes(&body) {
             Ok(resp) => read(resp),
             Err(ureq::Error::Status(_, resp)) => read(resp),
@@ -181,6 +181,12 @@ impl Client {
     }
 
     /// PUT 一个 JSON body。更新类端点（如 `PUT /api/v1/sof/{slug}`）用。
+    /// PATCH a JSON body (partial updates, e.g. asset presentation fields).
+    pub fn patch(&self, path: &str, body: &Value) -> Result<Response, String> {
+        let url = format!("{}{}", self.base, path);
+        self.send(self.agent.patch(&url), Some(body))
+    }
+
     pub fn put(&self, path: &str, body: &Value) -> Result<Response, String> {
         let url = format!("{}{}", self.base, path);
         self.send(self.agent.put(&url), Some(body))
@@ -209,7 +215,10 @@ impl Client {
         let status = resp.status();
         let headers = Headers {
             checksum: resp.header("X-Ratsa-Checksum").unwrap_or("").to_string(),
-            level: resp.header("X-Ratsa-Package-Level").unwrap_or("").to_string(),
+            level: resp
+                .header("X-Ratsa-Package-Level")
+                .unwrap_or("")
+                .to_string(),
             disposition: resp.header("Content-Disposition").unwrap_or("").to_string(),
         };
         let mut buf = Vec::new();
@@ -273,7 +282,9 @@ pub fn normalize_slug(raw: &str) -> String {
 pub fn slug_or_url(raw: &str) -> String {
     let s = raw.trim();
     let path = if let Some(rest) = s.split("//").nth(1) {
-        rest.split_once('/').map(|(_, p)| p.to_string()).unwrap_or_default()
+        rest.split_once('/')
+            .map(|(_, p)| p.to_string())
+            .unwrap_or_default()
     } else {
         s.to_string()
     };

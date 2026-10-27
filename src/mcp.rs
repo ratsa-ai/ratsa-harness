@@ -161,12 +161,12 @@ fn tools() -> Vec<Value> {
         }),
         json!({
             "name": "ratsa_rth_spec",
-            "description": "读取 RTH（Ratsa Runtime Harness）规范：RTHCore/服务面、能力、签名与准入流程、Use Cases。",
+            "description": "读取 RTH（Ratsa Runtime Harness）规范：RTHLoop/服务面、能力、签名与准入流程、Use Cases。",
             "inputSchema": {"type": "object", "properties": {}, "additionalProperties": false}
         }),
         json!({
             "name": "ratsa_list_rth_projects",
-            "description": "列出公开 RTH 项目（RTHCore 版本、状态、Agentic 验证状态）。",
+            "description": "列出公开 RTH 项目（RTHLoop 版本、状态、Agentic 验证状态）。",
             "inputSchema": {
                 "type": "object",
                 "properties": {"q": str_prop("可选：名称 / 简介关键字")},
@@ -175,7 +175,7 @@ fn tools() -> Vec<Value> {
         }),
         json!({
             "name": "ratsa_read_rth_project",
-            "description": "读取一个 RTH 项目：RTHCore 版本、签名公钥、Package、SOF/Lab 关联与 Agentic 验证结果。",
+            "description": "读取一个 RTH 项目：RTHLoop 版本、签名公钥、Package、SOF/Lab 关联与 Agentic 验证结果。",
             "inputSchema": {
                 "type": "object",
                 "properties": {"slug": str_prop("RTH 项目 slug")},
@@ -586,7 +586,8 @@ fn run_tool(name: &str, args: &Value, client: &Client) -> Result<String, String>
         }
         "ratsa_read_sof" => {
             let slug = api::slug_or_url(&arg_str(args, "slug"));
-            let path = commands::with_version(&format!("/api/sof/{slug}"), &arg_str(args, "version"));
+            let path =
+                commands::with_version(&format!("/api/sof/{slug}"), &arg_str(args, "version"));
             let resp = client.get(&path)?;
             if resp.status >= 400 {
                 return Err(resp.error_message());
@@ -647,7 +648,11 @@ fn run_tool(name: &str, args: &Value, client: &Client) -> Result<String, String>
             let slug = api::slug_or_url(&arg_str(args, "slug"));
             let kind = {
                 let k = arg_str(args, "kind");
-                if k.is_empty() { "device".to_string() } else { k }
+                if k.is_empty() {
+                    "device".to_string()
+                } else {
+                    k
+                }
             };
             let out = arg_str(args, "out_dir");
             let version = arg_str(args, "version");
@@ -664,14 +669,7 @@ fn run_tool(name: &str, args: &Value, client: &Client) -> Result<String, String>
             let summary = arg_str(args, "summary");
             let notes = arg_str(args, "notes");
             commands::report_run(
-                client,
-                &slug,
-                score,
-                passed,
-                failed,
-                &summary,
-                &notes,
-                "agent",
+                client, &slug, score, passed, failed, &summary, &notes, "agent",
             )
         }
         "ratsa_submit_feedback" => {
@@ -739,7 +737,10 @@ fn run_tool(name: &str, args: &Value, client: &Client) -> Result<String, String>
             if !profile.is_object() {
                 return Err("profile 必须是对象（字段同 POST /api/lab）".into());
             }
-            let submit = args.get("submit").and_then(|v| v.as_bool()).unwrap_or(false);
+            let submit = args
+                .get("submit")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             let mut resp = client.post("/api/v1/labs", &profile)?;
             if resp.status >= 400 {
                 return Err(resp.error_message());
@@ -846,10 +847,17 @@ fn run_tool(name: &str, args: &Value, client: &Client) -> Result<String, String>
                 return Ok(commands::cli_not_configured_hint());
             }
             let slug = api::slug_or_url(&arg_str(args, "slug"));
-            let rating = args.get("rating").and_then(|v| v.as_u64()).unwrap_or(0).min(5) as u8;
+            let rating = args
+                .get("rating")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0)
+                .min(5) as u8;
             let amount = args.get("amount").and_then(|v| v.as_f64()).unwrap_or(0.0);
             let service = args.get("service_id").and_then(|v| v.as_u64());
-            let consent = args.get("consent").and_then(|v| v.as_bool()).unwrap_or(false);
+            let consent = args
+                .get("consent")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             commands::lab_feedback_add(
                 client,
                 &slug,

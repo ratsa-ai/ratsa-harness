@@ -172,7 +172,11 @@ pub fn run(cfg: &Config, opt: &Options) -> Result<(), String> {
     println!(
         "  安装位置   : {}{}",
         root.display(),
-        if opt.global { "（全局）" } else { "（当前项目）" }
+        if opt.global {
+            "（全局）"
+        } else {
+            "（当前项目）"
+        }
     );
     println!("  可执行文件 : {}", env_info.bin);
     println!("  base_url   : {}", env_info.base_url);
@@ -184,10 +188,15 @@ pub fn run(cfg: &Config, opt: &Options) -> Result<(), String> {
         };
         println!("  key        : {} [{}]", cfg.key_name, scope);
         if !env_info.bound_slug.is_empty() {
-            println!("  归属绑定   : @{}（该 key 以该账号身份行动）", env_info.bound_slug);
+            println!(
+                "  归属绑定   : @{}（该 key 以该账号身份行动）",
+                env_info.bound_slug
+            );
         }
     } else {
-        println!("  凭证       : 尚未配置 —— 先运行 `ratsa-harness login` 或 `ratsa-harness key set`");
+        println!(
+            "  凭证       : 尚未配置 —— 先运行 `ratsa-harness login` 或 `ratsa-harness key set`"
+        );
     }
     println!();
 
@@ -275,7 +284,13 @@ pub fn print_agents(json_out: bool) -> Result<(), String> {
     }
     println!("支持的 Agent（`ratsa install --agent <id>`，可逗号多选或 all）\n");
     for t in target_table() {
-        println!("{:<10} {:<26} {:<18} {}", t.id, t.label, t.shape, t.files.join(" + "));
+        println!(
+            "{:<10} {:<26} {:<18} {}",
+            t.id,
+            t.label,
+            t.shape,
+            t.files.join(" + ")
+        );
         if t.mcp {
             println!("{:<10} └─ MCP: {} mcp", "", bin);
         }
@@ -401,9 +416,9 @@ fn apply(p: &Payload, opt: &Options, report: &mut Report) {
     if let Some(m) = p.merge.as_ref() {
         let current = fs::read_to_string(&p.path).ok();
         match merge_content(&p.path, m, current.as_deref(), opt.force) {
-            None => report
-                .lines
-                .push(format!("  · 跳过 {shown}（已包含 ratsa 条目，--force 覆盖）")),
+            None => report.lines.push(format!(
+                "  · 跳过 {shown}（已包含 ratsa 条目，--force 覆盖）"
+            )),
             Some((content, note)) => {
                 if opt.dry_run {
                     report.lines.push(format!(
@@ -424,9 +439,9 @@ fn apply(p: &Payload, opt: &Options, report: &mut Report) {
     if p.path.exists() && !opt.force {
         if let Ok(existing) = fs::read_to_string(&p.path) {
             if existing.contains("RATSA") {
-                report
-                    .lines
-                    .push(format!("  · 跳过 {shown}（已存在 RATSA 配置，--force 覆盖）"));
+                report.lines.push(format!(
+                    "  · 跳过 {shown}（已存在 RATSA 配置，--force 覆盖）"
+                ));
                 return;
             }
         }
@@ -451,7 +466,9 @@ fn write(path: &Path, content: &str, overwrite: bool) -> Result<(), String> {
         // Merge path: keep a one-shot backup before rewriting.
         let bak = path.with_extension(format!(
             "{}bak",
-            path.extension().map(|e| format!("{}.", e.to_string_lossy())).unwrap_or_default()
+            path.extension()
+                .map(|e| format!("{}.", e.to_string_lossy()))
+                .unwrap_or_default()
         ));
         let _ = fs::copy(path, bak);
     }
@@ -537,7 +554,10 @@ fn render(tpl: &str, env_info: &Env) -> String {
     let bound = if env_info.bound_slug.is_empty() {
         "（未绑定，key 以自身账号身份行动）".to_string()
     } else {
-        format!("@{}（该 key 以该账号身份行动，发布/归属都算在该账号上）", env_info.bound_slug)
+        format!(
+            "@{}（该 key 以该账号身份行动，发布/归属都算在该账号上）",
+            env_info.bound_slug
+        )
     };
     tpl.replace("{{BIN}}", &env_info.bin)
         .replace("{{BASE_URL}}", &env_info.base_url)
@@ -565,17 +585,14 @@ fn vscode_user_prompts() -> Option<PathBuf> {
     } else {
         vec![home.join(".config/Code/User/prompts")]
     };
-    candidates
-        .into_iter()
-        .find(|p| p.exists())
-        .or_else(|| {
-            let fallback = home.join("Library/Application Support/Code/User/prompts");
-            if cfg!(target_os = "macos") {
-                Some(fallback)
-            } else {
-                None
-            }
-        })
+    candidates.into_iter().find(|p| p.exists()).or_else(|| {
+        let fallback = home.join("Library/Application Support/Code/User/prompts");
+        if cfg!(target_os = "macos") {
+            Some(fallback)
+        } else {
+            None
+        }
+    })
 }
 
 /// The binary path we write into an Agent's config (MCP `command`, etc.).
