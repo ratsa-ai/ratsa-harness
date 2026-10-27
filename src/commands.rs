@@ -71,6 +71,13 @@ pub fn whoami(cfg: &mut Config, json_out: bool) -> Result<(), String> {
         if !plan.is_empty() {
             println!("套餐      : {plan}");
         }
+        if let Some(avatar) = u
+            .get("avatar_url")
+            .and_then(|x| x.as_str())
+            .filter(|url| !url.is_empty())
+        {
+            println!("头像      : {avatar}");
+        }
     } else if let Some(u) = v.get("name") {
         println!("账号      : {}", u.as_str().unwrap_or("-"));
     }
@@ -2440,6 +2447,102 @@ pub(crate) fn sha256_hex(data: &[u8]) -> String {
     out
 }
 
+// ----------------------------------------------------------------- profile
+
+fn avatar_content_type(path: &Path) -> Result<&'static str, String> {
+    match path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "png" => Ok("image/png"),
+        "jpg" | "jpeg" => Ok("image/jpeg"),
+        "gif" => Ok("image/gif"),
+        "webp" => Ok("image/webp"),
+        _ => Err("头像只支持 PNG / JPEG / GIF / WebP".into()),
+    }
+}
+
+/// `ratsa profile avatar` — view, upload or remove the account avatar.
+pub fn profile_avatar(
+    client: &Client,
+    file: Option<&str>,
+    clear: bool,
+    json_out: bool,
+) -> Result<String, String> {
+    if clear && file.is_some() {
+        return Err("--file 与 --clear 不能同时使用".into());
+    }
+    if clear {
+        let resp = client.delete("/api/me/avatar")?;
+        if resp.status == 401 {
+            return Err(
+                "头像修改需要登录会话：先运行 `ratsa login`（API key 只读身份不写资料）".into(),
+            );
+        }
+        if resp.status >= 400 {
+            return Err(resp.error_message());
+        }
+        if json_out {
+            return Ok(serde_json::to_string_pretty(&resp.json()).unwrap_or_default());
+        }
+        return Ok("✓ 已移除自定义头像（如绑定 GitHub，将恢复 GitHub 头像）\n".into());
+    }
+    if let Some(file) = file.filter(|f| !f.trim().is_empty()) {
+        let path = Path::new(file);
+        let data = fs::read(path).map_err(|e| format!("无法读取 {file}: {e}"))?;
+        if data.len() > 5 * 1024 * 1024 {
+            return Err("头像不能超过 5MB".into());
+        }
+        let ctype = avatar_content_type(path)?;
+        let filename = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("avatar.png");
+        let resp =
+            client.post_multipart("/api/me/avatar", "avatar", filename, ctype, &[], &data)?;
+        if resp.status == 401 {
+            return Err(
+                "头像修改需要登录会话：先运行 `ratsa login`（API key 只读身份不写资料）".into(),
+            );
+        }
+        if resp.status >= 400 {
+            return Err(resp.error_message());
+        }
+        let v = resp.json();
+        if json_out {
+            return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+        }
+        let url = v.get("avatar_url").and_then(|x| x.as_str()).unwrap_or("");
+        return Ok(format!("✓ 头像已更新：{url}\n"));
+    }
+    let path = if client.session.is_empty() {
+        "/api/v1/me"
+    } else {
+        "/api/me"
+    };
+    let resp = client.get(path)?;
+    if resp.status >= 400 {
+        return Err(resp.error_message());
+    }
+    let v = resp.json();
+    if json_out {
+        return Ok(serde_json::to_string_pretty(&v).unwrap_or_default());
+    }
+    let url = v
+        .get("user")
+        .and_then(|u| u.get("avatar_url"))
+        .and_then(|x| x.as_str())
+        .unwrap_or("");
+    if url.is_empty() {
+        Ok("当前未设置头像。用 `ratsa profile avatar --file me.png` 上传。\n".into())
+    } else {
+        Ok(format!("头像: {url}\n"))
+    }
+}
+
 // --------------------------------------------------------------------- RTH
 
 /// `ratsa rth spec` — the machine-readable RTH (Ratsa Runtime Harness) contract.
@@ -4632,6 +4735,19 @@ pub fn host_update(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn avatar_content_type_is_limited_to_images() {
+        assert_eq!(
+            avatar_content_type(Path::new("a.png")).unwrap(),
+            "image/png"
+        );
+        assert_eq!(
+            avatar_content_type(Path::new("a.JPG")).unwrap(),
+            "image/jpeg"
+        );
+        assert!(avatar_content_type(Path::new("a.svg")).is_err());
+    }
 
     #[test]
     fn upload_content_type_covers_archives_and_sdks() {

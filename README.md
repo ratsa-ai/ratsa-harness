@@ -79,7 +79,8 @@ The MCP tool surface is exposed at the same time, so an Agent never has to memor
 | `install` | Install / update each Agent's skill and MCP entry |
 | `agents` | List supported Agents, their form, files written, and MCP registration (`--json`) |
 | `login` / `logout` | Session (used only to create and manage keys); `RATSA_PASSWORD` for non-interactive use |
-| `whoami` | Identity + key scopes + owner binding (`--json`) |
+| `whoami` | Identity + key scopes + owner binding + avatar URL (`--json`) |
+| `avatar` / `profile avatar` | View / upload (`--file`) / clear (`--clear`) the account avatar; needs a `login` session |
 | `scopes` | Permission table (fetched from `/api/meta`, with per-scope meaning and default set) |
 | `keys list` / `keys create` / `keys revoke` | Choose scopes + optional `--bound-slug`; `--use` applies immediately |
 | `config set/show/clear` | Local credentials (`~/.ratsa/config.json`, mode 0600) |
@@ -103,7 +104,7 @@ The MCP tool surface is exposed at the same time, so an Agent never has to memor
 | `kb` | Pull the SOF knowledge base: index by default, `--sof <slug>` for a device level, `--doc <key\|slug>` prints or saves the Markdown (checksum verified) |
 | `report` | Report a measured run (`source=agent`) into the device's Harness Eval |
 | `feedback` | Submit feedback to the vendor |
-| `mcp` | Run as an MCP stdio server (38 tools) |
+| `mcp` | Run as an MCP stdio server (39 tools) |
 | `upgrade` | Update the `ratsa` binary itself from the release channel |
 
 `upgrade` exists because the npm package version is independent of the CLI release tag
@@ -183,9 +184,9 @@ it reads, its publishes and submissions all belong to that account.
   needed for "vendor authorises a third party to hold a key under its identity" (see below).
 - Server side: `/api/v1/me` returns `acting_as`; the key list returns `bound_user`.
 
-## MCP tools (38)
+## MCP tools (39)
 
-`ratsa_whoami` · `ratsa_scopes` · `ratsa_search_sofs` · `ratsa_read_sof` ·
+`ratsa_whoami` · `ratsa_avatar` · `ratsa_scopes` · `ratsa_search_sofs` · `ratsa_read_sof` ·
 `ratsa_list_sof_versions` · `ratsa_device_harness` · `ratsa_list_packages` · `ratsa_pull_package` ·
 `ratsa_list_agents` · `ratsa_generate_package` · `ratsa_get_sof_file` ·
 `ratsa_report_run` · `ratsa_submit_feedback` ·

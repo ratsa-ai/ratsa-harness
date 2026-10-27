@@ -61,6 +61,23 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// 查看 / 上传 / 移除自己的头像
+    Avatar {
+        /// 图片文件（PNG / JPEG / GIF / WebP，最大 5MB）
+        #[arg(long)]
+        file: Option<String>,
+        /// 移除自定义头像，恢复 GitHub 头像（如已绑定）
+        #[arg(long)]
+        clear: bool,
+        /// 输出原始 JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// 管理自己的公开资料（头像）
+    Profile {
+        #[command(subcommand)]
+        action: ProfileAction,
+    },
     /// 打印 RATSA 权限表（可授予 key 的 scope 及含义）
     Scopes,
     /// 管理 API key / secret（权限表 + 归属绑定）
@@ -1110,6 +1127,22 @@ struct LoginArgs {
     base_url: Option<String>,
 }
 
+#[derive(Subcommand, Debug)]
+enum ProfileAction {
+    /// 查看 / 上传 / 移除自己的头像
+    Avatar {
+        /// 图片文件（PNG / JPEG / GIF / WebP，最大 5MB）
+        #[arg(long)]
+        file: Option<String>,
+        /// 移除自定义头像，恢复 GitHub 头像（如已绑定）
+        #[arg(long)]
+        clear: bool,
+        /// 输出原始 JSON
+        #[arg(long)]
+        json: bool,
+    },
+}
+
 #[derive(Args, Debug)]
 struct KeysArgs {
     #[command(subcommand)]
@@ -1430,6 +1463,19 @@ fn main() {
         }
         Command::Logout => commands::logout(&mut cfg),
         Command::Whoami { json } => commands::whoami(&mut cfg, json),
+        Command::Avatar { file, clear, json } => {
+            let client = api::Client::new(&cfg);
+            commands::profile_avatar(&client, file.as_deref(), clear, json).map(|s| print!("{s}"))
+        }
+        Command::Profile { action } => {
+            let client = api::Client::new(&cfg);
+            match action {
+                ProfileAction::Avatar { file, clear, json } => {
+                    commands::profile_avatar(&client, file.as_deref(), clear, json)
+                        .map(|s| print!("{s}"))
+                }
+            }
+        }
         Command::Scopes => commands::scopes(&cfg),
         Command::Keys(args) => match args.action {
             KeysAction::List { json } => commands::keys_list(&cfg, json),

@@ -104,6 +104,18 @@ fn tools() -> Vec<Value> {
             "inputSchema": {"type": "object", "properties": {}, "additionalProperties": false}
         }),
         json!({
+            "name": "ratsa_avatar",
+            "description": "查看 / 上传 / 移除当前账号的头像。file 为本地图片路径（PNG/JPEG/GIF/WebP，≤5MB）；clear=true 移除自定义头像并恢复 GitHub 头像；不传参数则返回当前头像 URL。上传与移除需要 `ratsa login` 会话。",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file": str_prop("本地头像图片路径；省略则只查看"),
+                    "clear": {"type": "boolean", "description": "移除自定义头像（恢复 GitHub 头像）"}
+                },
+                "additionalProperties": false
+            }
+        }),
+        json!({
             "name": "ratsa_scopes",
             "description": "列出 RATSA 权限表（可授予 key 的全部 scope 及其含义）与默认集合，用于生成最小权限的 key。",
             "inputSchema": {"type": "object", "properties": {}, "additionalProperties": false}
@@ -545,6 +557,23 @@ fn run_tool(name: &str, args: &Value, client: &Client) -> Result<String, String>
                 return Err(me.error_message());
             }
             Ok(serde_json::to_string_pretty(&me.json()).unwrap_or_default())
+        }
+        "ratsa_avatar" => {
+            if !client_has_creds(client) {
+                return Ok(commands::cli_not_configured_hint());
+            }
+            let file = arg_str(args, "file");
+            let clear = args.get("clear").and_then(|v| v.as_bool()).unwrap_or(false);
+            commands::profile_avatar(
+                client,
+                if file.trim().is_empty() {
+                    None
+                } else {
+                    Some(&file)
+                },
+                clear,
+                true,
+            )
         }
         "ratsa_scopes" => {
             let meta = client.get("/api/v1/meta")?;
